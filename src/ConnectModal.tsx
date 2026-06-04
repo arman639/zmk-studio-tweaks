@@ -25,11 +25,15 @@ export interface ConnectModalProps {
   onTransportCreated: (t: RpcTransport) => void;
 }
 
-function deviceList(
-  open: boolean,
-  transports: TransportFactory[],
-  onTransportCreated: (t: RpcTransport) => void
-) {
+function DeviceList({
+  open,
+  transports,
+  onTransportCreated,
+}: {
+  open: boolean;
+  transports: TransportFactory[];
+  onTransportCreated: (t: RpcTransport) => void;
+}) {
   const [devices, setDevices] = useState<
     Array<[TransportFactory, AvailableDevice]>
   >([]);
@@ -38,7 +42,7 @@ function deviceList(
 
   async function LoadEm() {
     setRefreshing(true);
-    let entries: Array<[TransportFactory, AvailableDevice]> = [];
+    const entries: Array<[TransportFactory, AvailableDevice]> = [];
     for (const t of transports.filter((t) => t.pick_and_connect)) {
       const devices = await t.pick_and_connect?.list();
       if (!devices) {
@@ -127,10 +131,13 @@ function deviceList(
   );
 }
 
-function simpleDevicePicker(
-  transports: TransportFactory[],
-  onTransportCreated: (t: RpcTransport) => void
-) {
+function SimpleDevicePicker({
+  transports,
+  onTransportCreated,
+}: {
+  transports: TransportFactory[];
+  onTransportCreated: (t: RpcTransport) => void;
+}) {
   const [availableDevices, setAvailableDevices] = useState<
     AvailableDevice[] | undefined
   >(undefined);
@@ -147,7 +154,7 @@ function simpleDevicePicker(
     let ignore = false;
 
     if (selectedTransport.connect) {
-      async function connectTransport() {
+      const connectTransport = async () => {
         try {
           const transport = await selectedTransport?.connect?.();
 
@@ -166,17 +173,17 @@ function simpleDevicePicker(
             setSelectedTransport(undefined);
           }
         }
-      }
+      };
 
       connectTransport();
     } else {
-      async function loadAvailableDevices() {
+      const loadAvailableDevices = async () => {
         const devices = await selectedTransport?.pick_and_connect?.list();
 
         if (!ignore) {
           setAvailableDevices(devices);
         }
-      }
+      };
 
       loadAvailableDevices();
     }
@@ -186,7 +193,7 @@ function simpleDevicePicker(
     };
   }, [selectedTransport]);
 
-  let connections = transports.map((t) => (
+  const connections = transports.map((t) => (
     <li key={t.label} className="list-none">
       <button
         className="bg-base-300 hover:bg-primary hover:text-primary-content rounded px-2 py-1"
@@ -258,21 +265,6 @@ function noTransportsOptionsPrompt() {
   );
 }
 
-function connectOptions(
-  transports: TransportFactory[],
-  onTransportCreated: (t: RpcTransport) => void,
-  open?: boolean
-) {
-  const useSimplePicker = useMemo(
-    () => transports.every((t) => !t.pick_and_connect),
-    [transports]
-  );
-
-  return useSimplePicker
-    ? simpleDevicePicker(transports, onTransportCreated)
-    : deviceList(open || false, transports, onTransportCreated);
-}
-
 export const ConnectModal = ({
   open,
   transports,
@@ -281,13 +273,32 @@ export const ConnectModal = ({
   const dialog = useModalRef(open || false, false, false);
 
   const haveTransports = useMemo(() => transports.length > 0, [transports]);
+  // Transports exposing only `connect` use the simple picker; those with
+  // `pick_and_connect` use the device list. Render each as its own component
+  // so their differing hook sets stay isolated — calling them inline as
+  // functions made ConnectModal's own hook order depend on the transport kind.
+  const useSimplePicker = useMemo(
+    () => transports.every((t) => !t.pick_and_connect),
+    [transports]
+  );
 
   return (
     <GenericModal ref={dialog} className="max-w-xl">
       <h1 className="text-xl">Welcome to ZMK Studio</h1>
-      {haveTransports
-        ? connectOptions(transports, onTransportCreated, open)
-        : noTransportsOptionsPrompt()}
+      {!haveTransports ? (
+        noTransportsOptionsPrompt()
+      ) : useSimplePicker ? (
+        <SimpleDevicePicker
+          transports={transports}
+          onTransportCreated={onTransportCreated}
+        />
+      ) : (
+        <DeviceList
+          open={open || false}
+          transports={transports}
+          onTransportCreated={onTransportCreated}
+        />
+      )}
     </GenericModal>
   );
 };

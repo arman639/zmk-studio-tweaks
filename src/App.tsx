@@ -26,7 +26,7 @@ import {
 } from "./tauri/serial";
 import Keyboard from "./keyboard/Keyboard";
 import { UndoRedoContext, useUndoRedo } from "./undoRedo";
-import { usePub, useSub } from "./usePubSub";
+import { getPub, useSub } from "./usePubSub";
 import { LockState } from "@zmkfirmware/zmk-studio-ts-client/core";
 import { LockStateContext } from "./rpc/LockStateContext";
 import { UnlockModal } from "./UnlockModal";
@@ -84,9 +84,8 @@ async function listen_for_notifications(
     reader.releaseLock();
   };
   signal.addEventListener("abort", onAbort, { once: true });
-  do {
-    const pub = usePub();
-
+  const pub = getPub();
+  for (;;) {
     try {
       const { done, value } = await reader.read();
       if (done) {
@@ -123,7 +122,7 @@ async function listen_for_notifications(
       reader.releaseLock();
       throw e;
     }
-  } while (true);
+  }
 
   signal.removeEventListener("abort", onAbort);
   reader.releaseLock();

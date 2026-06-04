@@ -15,5 +15,17 @@ module.exports = {
       "warn",
       { allowConstantExport: true },
     ],
+    // Allow intentionally-unused bindings/args when prefixed with `_`.
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
+      },
+    ],
+    // `any` shows up at the FFI / RPC plumbing boundaries inherited from
+    // upstream; keep it visible as a warning rather than failing the build.
+    "@typescript-eslint/no-explicit-any": "warn",
   },
 };
