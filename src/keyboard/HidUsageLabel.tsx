@@ -31,7 +31,7 @@ function shrink_class_for(len: number): string {
 
 export const HidUsageLabel = ({ hid_usage, compact }: HidUsageLabelProps) => {
   const layout = useHostLayout();
-  let [pageWithMods, id] = hid_usage_page_and_id_from_usage(hid_usage);
+  const [pageWithMods, id] = hid_usage_page_and_id_from_usage(hid_usage);
 
   // The encoded value packs implicit-modifier bits into the high byte of
   // the page word: bit 1 / bit 5 = L Shift / R Shift, etc.
@@ -39,7 +39,7 @@ export const HidUsageLabel = ({ hid_usage, compact }: HidUsageLabelProps) => {
   const page = pageWithMods & 0xff;
   const shiftActive = (mods & (0x02 | 0x20)) !== 0;
 
-  let labels = hid_usage_get_metadata(page, id, layout);
+  const labels = hid_usage_get_metadata(page, id, layout);
 
   // Short labels like "1 !" / "- _" / "[ {" are unshifted+shifted pairs.
   // When an implicit Shift is applied the binding always types the shifted

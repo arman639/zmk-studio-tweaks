@@ -49,8 +49,8 @@ export function scalePosition(
   { x, y, r, rx, ry }: PhysicalLayoutPositionLocation,
   oneU: number,
 ): CSSProperties {
-  let left = x * oneU;
-  let top = y * oneU;
+  const left = x * oneU;
+  const top = y * oneU;
   let transformOrigin = undefined;
   let transform = undefined;
   const transformStyle = "preserve-3d";
