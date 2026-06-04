@@ -32,7 +32,6 @@ interface PhysicalLayoutProps {
   positions: Array<KeyPosition>;
   selectedPosition?: number;
   oneU?: number;
-  hoverZoom?: boolean;
   zoom?: LayoutZoom;
   onPositionClicked?: (position: number) => void;
 }
@@ -199,8 +198,7 @@ export const PhysicalLayout = ({
     >
       {/*
         Don't spread `props` onto this DOM div: after the destructure above it
-        only holds `hoverZoom` and `zoom`, neither of which is a valid DOM
-        attribute, so React warned about leaking them (e.g. `hoverZoom`).
+        only holds `zoom`, which isn't a valid DOM attribute.
       */}
       <div
         className="relative"
