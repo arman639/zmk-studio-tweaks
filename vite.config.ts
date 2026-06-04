@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react-swc";
 
 // https://vitejs.dev/config/
@@ -20,6 +20,16 @@ export default defineConfig({
     "TAURI_PLATFORM_TYPE",
     "TAURI_DEBUG",
   ],
+  test: {
+    server: {
+      deps: {
+        // The ts-client ships ESM with extensionless relative imports (`./studio`).
+        // Inline it so Vitest resolves those through Vite rather than native node
+        // ESM, which would otherwise fail to find the module.
+        inline: ["@zmkfirmware/zmk-studio-ts-client"],
+      },
+    },
+  },
   build: {
     // Tauri uses Chromium on Windows and WebKit on macOS and Linux
     target: process.env.TAURI_PLATFORM == "windows" ? "chrome105" : "safari13",
