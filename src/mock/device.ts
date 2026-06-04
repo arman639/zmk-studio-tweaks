@@ -149,6 +149,9 @@ export function createMockHandler(fixture: MockKeyboardFixture): RpcHandler {
           });
         }
         activeLayoutIndex = index;
+        // Switching the active physical layout is a persisted setting, so mark
+        // the keymap dirty to match real firmware (lights the Save indicator).
+        unsavedChanges = true;
         return resp(requestId, {
           keymap: { setActivePhysicalLayout: { ok: keymap() } },
         });
