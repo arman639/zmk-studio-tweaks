@@ -172,11 +172,9 @@ export const PhysicalLayout = ({
   }, [props.zoom, origWidth, origHeight]);
 
   const positionItems = positions.map((p, idx) => (
-    <div className="absolute" style={scalePosition(p, oneU)}>
-      <div
-        key={p.id}
-        onClick={() => onPositionClicked?.(idx)}
-      >
+    // key belongs on the outermost mapped element, not the inner div.
+    <div key={p.id} className="absolute" style={scalePosition(p, oneU)}>
+      <div onClick={() => onPositionClicked?.(idx)}>
         <Key
           oneU={oneU}
           selected={idx === selectedPosition}
@@ -199,6 +197,11 @@ export const PhysicalLayout = ({
       }}
       ref={ref}
     >
+      {/*
+        Don't spread `props` onto this DOM div: PhysicalLayoutProps
+        (positions, hoverZoom, onPositionClicked, …) aren't valid DOM
+        attributes and React warns about leaking them (e.g. `hoverZoom`).
+      */}
       <div
         className="relative"
         style={{
@@ -208,7 +211,6 @@ export const PhysicalLayout = ({
           transformOrigin: "top left",
           transformStyle: "preserve-3d",
         }}
-        {...props}
       >
         <div
           className="absolute inset-0"
