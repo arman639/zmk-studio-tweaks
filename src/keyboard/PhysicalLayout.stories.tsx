@@ -178,7 +178,6 @@ const POSITIONS = MINIVAN_POSITIONS.map((k, i) => ({ ...k, id: `base-${i}` }));
 export const Minivan: Story = {
   args: {
     positions: POSITIONS,
-    hoverZoom: true,
   },
 };
 
@@ -192,7 +191,6 @@ export const MiniMinivan: Story = {
       height,
     })),
     oneU: 15,
-    hoverZoom: false,
   },
 };
 
@@ -262,6 +260,5 @@ const ROTATED_POSITIONS = [
 export const RotatedKeys: Story = {
   args: {
     positions: ROTATED_POSITIONS,
-    hoverZoom: true,
   },
 };
