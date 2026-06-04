@@ -198,9 +198,9 @@ export const PhysicalLayout = ({
       ref={ref}
     >
       {/*
-        Don't spread `props` onto this DOM div: PhysicalLayoutProps
-        (positions, hoverZoom, onPositionClicked, …) aren't valid DOM
-        attributes and React warns about leaking them (e.g. `hoverZoom`).
+        Don't spread `props` onto this DOM div: after the destructure above it
+        only holds `hoverZoom` and `zoom`, neither of which is a valid DOM
+        attribute, so React warned about leaking them (e.g. `hoverZoom`).
       */}
       <div
         className="relative"
