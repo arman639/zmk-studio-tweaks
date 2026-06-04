@@ -24,6 +24,7 @@ import {
   connect as tauri_serial_connect,
   list_devices as serial_list_devices,
 } from "./tauri/serial";
+import { MOCK_TRANSPORTS } from "./mock";
 import Keyboard from "./keyboard/Keyboard";
 import { UndoRedoContext, useUndoRedo } from "./undoRedo";
 import { getPub, useSub } from "./usePubSub";
@@ -177,6 +178,9 @@ function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [showLicenseNotice, setShowLicenseNotice] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  // When true the connect dialog is scoped to the in-memory demo transport(s)
+  // instead of real USB/BLE — driven by the hero's "Try a demo keyboard".
+  const [demoMode, setDemoMode] = useState(false);
   const [connectionAbort, setConnectionAbort] = useState(new AbortController());
 
   const [lockState, setLockState] = useState<LockState>(
@@ -605,8 +609,14 @@ function App() {
           <UnlockModal />
           <ConnectModal
             open={showConnectModal && !conn.conn}
-            transports={TRANSPORTS}
+            transports={demoMode ? MOCK_TRANSPORTS : TRANSPORTS}
             onTransportCreated={onConnect}
+            title={demoMode ? "Try a demo keyboard" : undefined}
+            description={
+              demoMode
+                ? "No hardware needed — pick a virtual keyboard to explore the editor."
+                : undefined
+            }
           />
           <AboutModal open={showAbout} onClose={() => setShowAbout(false)} />
           <LicenseNoticeModal
@@ -637,7 +647,14 @@ function App() {
               </>
             ) : (
               <HeroPage
-                onConnect={() => setShowConnectModal(true)}
+                onConnect={() => {
+                  setDemoMode(false);
+                  setShowConnectModal(true);
+                }}
+                onTryDemo={() => {
+                  setDemoMode(true);
+                  setShowConnectModal(true);
+                }}
                 hasTransports={TRANSPORTS.length > 0}
               />
             )}

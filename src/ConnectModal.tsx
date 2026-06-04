@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RpcTransport } from "@zmkfirmware/zmk-studio-ts-client/transport/index";
 import { UserCancelledError } from "@zmkfirmware/zmk-studio-ts-client/transport/errors";
 import type { AvailableDevice } from "./tauri/index";
-import { Bluetooth, RefreshCw } from "lucide-react";
+import { Bluetooth, ChevronRight, RefreshCw } from "lucide-react";
 import { Key, ListBox, ListBoxItem, Selection } from "react-aria-components";
 import { useModalRef } from "./misc/useModalRef";
 import { ExternalLink } from "./misc/ExternalLink";
@@ -23,6 +23,10 @@ export interface ConnectModalProps {
   open?: boolean;
   transports: TransportFactory[];
   onTransportCreated: (t: RpcTransport) => void;
+  /** Heading shown at the top of the dialog. */
+  title?: string;
+  /** Optional one-line intro under the heading (e.g. demo context). */
+  description?: string;
 }
 
 function DeviceList({
@@ -92,8 +96,8 @@ function DeviceList({
 
   return (
     <div>
-      <div className="grid grid-cols-[1fr_auto]">
-        <label>Select A Device:</label>
+      <div className="grid grid-cols-[1fr_auto] items-center pt-2">
+        <label className="text-sm font-medium">Select a device to connect:</label>
         <button
           className="p-1 rounded hover:bg-base-300 disabled:bg-base-100 disabled:opacity-75"
           disabled={refreshing}
@@ -112,18 +116,22 @@ function DeviceList({
         onSelectionChange={onSelect}
         selectionMode="single"
         selectedKeys={selectedDev}
-        className="flex flex-col gap-1 pt-1"
+        className="flex flex-col gap-2 pt-2"
+        renderEmptyState={() => (
+          <p className="text-sm text-base-content/60 py-2">
+            {refreshing ? "Scanning…" : "No devices found."}
+          </p>
+        )}
       >
         {([t, d]) => (
           <ListBoxItem
-            className="grid grid-cols-[1em_1fr] rounded hover:bg-base-300 cursor-pointer px-1"
+            className="flex items-center gap-2 rounded-lg border border-base-300 bg-base-200 px-3 py-2 cursor-pointer transition-colors hover:bg-base-300 hover:border-primary rac-selected:border-primary outline-none rac-focus-visible:ring-2 rac-focus-visible:ring-primary"
             id={d.id}
             aria-label={d.label}
           >
-            {t.isWireless && (
-              <Bluetooth className="w-4 justify-center content-center h-full" />
-            )}
-            <span className="col-start-2">{d.label}</span>
+            {t.isWireless && <Bluetooth className="size-4 shrink-0" />}
+            <span className="flex-1">{d.label}</span>
+            <ChevronRight className="size-4 shrink-0 text-base-content/40" />
           </ListBoxItem>
         )}
       </ListBox>
@@ -269,14 +277,18 @@ export const ConnectModal = ({
   open,
   transports,
   onTransportCreated,
+  title = "Welcome to ZMK Studio",
+  description,
 }: ConnectModalProps) => {
   const dialog = useModalRef(open || false, false, false);
 
   const haveTransports = useMemo(() => transports.length > 0, [transports]);
   // Transports exposing only `connect` use the simple picker; those with
-  // `pick_and_connect` use the device list. Render each as its own component
-  // so their differing hook sets stay isolated — calling them inline as
-  // functions made ConnectModal's own hook order depend on the transport kind.
+  // `pick_and_connect` (Tauri BLE/USB, and the demo) use the device list.
+  // Render each as its own component so their differing hook sets stay
+  // isolated — calling them inline as functions made ConnectModal's own hook
+  // order depend on the transport kind, which crashed when switching between
+  // real and demo transports.
   const useSimplePicker = useMemo(
     () => transports.every((t) => !t.pick_and_connect),
     [transports]
@@ -284,7 +296,10 @@ export const ConnectModal = ({
 
   return (
     <GenericModal ref={dialog} className="max-w-xl">
-      <h1 className="text-xl">Welcome to ZMK Studio</h1>
+      <h1 className="text-xl">{title}</h1>
+      {description && (
+        <p className="text-sm text-base-content/70 pt-1">{description}</p>
+      )}
       {!haveTransports ? (
         noTransportsOptionsPrompt()
       ) : useSimplePicker ? (

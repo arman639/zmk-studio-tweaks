@@ -6,6 +6,7 @@ import { useModalRef } from "./misc/useModalRef";
 
 export interface HeroPageProps {
   onConnect: () => void;
+  onTryDemo: () => void;
   hasTransports: boolean;
 }
 
@@ -110,7 +111,11 @@ const FEATURES: Feature[] = [
   },
 ];
 
-export const HeroPage = ({ onConnect, hasTransports }: HeroPageProps) => {
+export const HeroPage = ({
+  onConnect,
+  onTryDemo,
+  hasTransports,
+}: HeroPageProps) => {
   const [expanded, setExpanded] = useState<FeatureImage | null>(null);
   const openImage = useCallback((image: FeatureImage) => {
     if (image.label) setExpanded(image);
@@ -136,14 +141,27 @@ export const HeroPage = ({ onConnect, hasTransports }: HeroPageProps) => {
             </p>
 
             <div className="flex flex-col items-start gap-2">
-              <button
-                type="button"
-                onClick={onConnect}
-                disabled={!hasTransports}
-                className="bg-primary text-primary-content px-6 py-3 rounded-lg text-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Connect a keyboard
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onConnect}
+                  disabled={!hasTransports}
+                  className="bg-primary text-primary-content px-6 py-3 rounded-lg text-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Connect a keyboard
+                </button>
+                <button
+                  type="button"
+                  onClick={onTryDemo}
+                  className="border border-primary text-primary px-6 py-3 rounded-lg text-lg font-medium hover:bg-primary hover:text-primary-content"
+                >
+                  Try a demo keyboard
+                </button>
+              </div>
+              <p className="text-sm text-base-content/60">
+                No keyboard handy? "Try a demo keyboard" opens a built-in
+                virtual device — explore the editor with nothing to plug in.
+              </p>
               {hasTransports ? (
                 <p className="text-sm text-base-content/60">
                   Uses the Web Serial API — no data leaves your machine.
