@@ -1,0 +1,47 @@
+name: ci
+
+# Lightweight gate for PRs into main: lint, typecheck, and the Vitest suite
+# (unit + happy-dom integration). The Playwright E2E suite is intentionally NOT
+# run here — it downloads a browser and is slower; run it locally with
+# `npm run test:e2e`, or add a separate opt-in workflow later if wanted.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel an in-flight run when new commits land on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: the job only reads this repo and fetches a public one.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # DownloadPage imports src/data/release-data.json (gitignored, fetched at
+      # build time), so generate it before typechecking. The repo token lifts
+      # the unauthenticated GitHub API rate limit.
+      - run: npm run generate-data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: npx tsc --noEmit
+
+      - run: npm run lint
+
+      - run: npm test
