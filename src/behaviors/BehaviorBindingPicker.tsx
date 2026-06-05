@@ -61,10 +61,11 @@ const STANDARD_BEHAVIOR_ORDER: Record<string, number> = Object.fromEntries(
 
 const GROUP_ORDER = ["Basic", "Layer", "Hold-Tap", "Mouse", "System", "Other"];
 
-// Keycap faces for the in-grid clear tiles: a blank cap for None, the
-// conventional ▽ for Transparent. Falls back to the behavior name on its cap.
+// Keycap faces for the in-grid clear tiles: ∅ for None (an empty/no-op key),
+// the conventional ▽ for Transparent. Rendered faintly so the cap reads as a
+// special "clear" key. Falls back to the behavior name on its cap.
 const CLEAR_TILE_GLYPHS: Record<string, string> = {
-  None: "",
+  None: "∅",
   Transparent: "▽",
 };
 

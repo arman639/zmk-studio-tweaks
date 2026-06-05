@@ -216,11 +216,14 @@ end state. Each step is its own PR.
   real key to go back to `&kp`). Leave the existing behavior tabs in place.
 - **Where:** *inside the key grid, on every tab* (per the issue's "every
   key-grid tab"), rendered as **keycaps** so picking one reads like picking a key:
-  a **blank cap = None**, a **▽ cap = Transparent**.
+  a faint **∅ cap = None**, a **▽ cap = Transparent** (a fully blank cap read as a
+  rendering gap, so the glyph is drawn faintly instead).
   [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx) takes an optional
   `clearTiles` config and appends the keycaps among the keys of each tab's layout
-  (styled identically to a 1U key — same border, fill and size), on Basic /
-  ISO·JIS / Numpad / … and during search. The config is threaded
+  (styled identically to a key on that tab — same border, fill and size; the cap
+  is omitted from the Other tab, which is a combobox not a grid), on Basic /
+  ISO·JIS / Numpad / … and during search (including the no-match state). The
+  config is threaded
   [`BehaviorBindingPicker`](../../src/behaviors/BehaviorBindingPicker.tsx) →
   [`BehaviorParametersPicker`](../../src/behaviors/BehaviorParametersPicker.tsx) →
   [`ParameterValuePicker`](../../src/behaviors/ParameterValuePicker.tsx) so the
@@ -237,6 +240,14 @@ end state. Each step is its own PR.
   existing `doUpdateBinding` write. When a clear behavior is active the grid stays
   live so clicking a key promotes back to `&kp` in one click; other 0-param
   behaviors keep the dimmed placeholder.
+- **Accepted Step 1 trade-off:** dropping the chips means there's no one-click
+  clear from a state that renders *no* keycode grid — a layer behavior (layer
+  radios, no grid) or a non-`&kp` 0-param like Caps Word (dimmed placeholder).
+  Clearing from there takes two clicks (Key Press → ∅). The common Key Press ↔
+  None path improves; this rarer gap is left for Step 2, where the slot model
+  unifies how every state is cleared. (A cheap partial fix — passing `clearTiles`
+  to the dimmed placeholder — would restore one-click clear from Caps Word but not
+  from layer behaviors, so it's deferred rather than half-done.)
 - **Done when:** from any keycode tab, one click sets `&none`/`&trans`, one click
   on a key returns to `&kp`, and the dimmed-placeholder round trip is gone for
   this case.
@@ -520,18 +531,23 @@ behavior は「実際にいくつ枠を持つか」で形が分かれる。見�
 
 - **Step 1（最小・低リスク）** — **キーグリッドの各タブ内**に常設の **None /
   Transparent** タイル（issue の「全 key-grid タブ」に忠実）。**キーキャップ**として
-  描画し、選ぶ動作が「キーを選ぶ」のと同じに見えるようにする（**ブランクのキャップ＝
-  None**、**▽ のキャップ＝Transparent**）。
+  描画し、選ぶ動作が「キーを選ぶ」のと同じに見えるようにする（薄い **∅ キャップ＝
+  None**、**▽ キャップ＝Transparent**。完全ブランクは描画抜けに見えるのでグリフを薄く
+  出す）。
   [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx) に任意の `clearTiles`
-  設定を渡し、各タブのレイアウトのキーに混ぜて描画（1U キーと同じ枠・塗り・サイズ）
-  ——Basic / ISO·JIS / Numpad … と検索中も表示。設定は
+  設定を渡し、各タブのレイアウトのキーに混ぜて描画（そのタブのキーと同じ枠・塗り・
+  サイズ。Other タブは combobox でキーではないので出さない）——Basic / ISO·JIS /
+  Numpad … と検索中（0件時も）表示。設定は
   [`BehaviorBindingPicker`](../../src/behaviors/BehaviorBindingPicker.tsx) →
   [`BehaviorParametersPicker`](../../src/behaviors/BehaviorParametersPicker.tsx) →
   [`ParameterValuePicker`](../../src/behaviors/ParameterValuePicker.tsx) と通し、
   binding が出す全キーコードグリッドに出る。クリックで behavior 差し替え、選択中は
   ハイライト、クリア中もグリッドは操作可能（キー押下で1クリック `&kp` 復帰）。冗長に
   なった None/Transparent のチップは behavior 群から外す（キーキャップで代替）。既存
-  タブ自体は残す。**A11y:** タイルは radio ではなく **`aria-pressed` トグルボタン**——
+  タブ自体は残す。**割り切り（Step 1）**: チップを消したため、キーコードグリッドを
+  出さない状態（レイヤー系・Caps Word 等）からのクリアは2クリックになる。よくある
+  Key Press↔None は改善。この稀なギャップは Step 2 のスロットモデルで統一する。
+  **A11y:** タイルは radio ではなく **`aria-pressed` トグルボタン**——
   binding 全体の behavior を切り替え、どのクリア behavior が有効かを表すだけで、キー
   （HID usage）選択ではない。同名が2つの radiogroup に跨る問題も解消（初版の
   `role="radio"` ストリップで先送りした a11y 指摘の解決）。behaviorId は `behaviors`
