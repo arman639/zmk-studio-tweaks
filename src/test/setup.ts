@@ -1,6 +1,6 @@
 // Vitest global setup. Loaded for every test file; each shim is guarded so it
-// only applies in the jsdom environment and leaves the node-env tests
-// (PhysicalLayout, mock) untouched.
+// only applies in the DOM (happy-dom) test environment and leaves the node-env
+// tests (PhysicalLayout, mock, …) untouched.
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
@@ -9,7 +9,7 @@ import { cleanup } from "@testing-library/react";
 // `globals: true`), so renders don't stack up and duplicate matched elements.
 afterEach(() => cleanup());
 
-// jsdom has no ResizeObserver; PhysicalLayout observes its parent.
+// The DOM test env has no ResizeObserver; PhysicalLayout observes its parent.
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
     observe() {}
@@ -18,7 +18,7 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   } as unknown as typeof ResizeObserver;
 }
 
-// jsdom's <dialog> showModal/close are either missing or throw "Not
+// The DOM env's <dialog> showModal/close may be missing or throw "Not
 // implemented"; useModalRef drives the connect/unlock modals through them.
 // Replace with minimal versions that just toggle `open` and fire `close`.
 if (typeof HTMLDialogElement !== "undefined") {
@@ -35,8 +35,8 @@ if (typeof HTMLDialogElement !== "undefined") {
   };
 }
 
-// react-aria drives selection through Pointer events + pointer capture, neither
-// of which jsdom implements. Without these, clicking a ListBox option never
+// react-aria drives selection through Pointer events + pointer capture, which
+// the DOM env may not implement. Without these, clicking a ListBox option never
 // fires onSelectionChange.
 if (typeof window !== "undefined" && !window.PointerEvent) {
   class PointerEventPolyfill extends MouseEvent {
@@ -62,7 +62,7 @@ if (typeof Element !== "undefined") {
   };
 }
 
-// react-aria and lucide occasionally call these; jsdom doesn't implement them.
+// react-aria and lucide occasionally call these; the DOM env may not implement them.
 if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
