@@ -216,8 +216,9 @@ end state. Each step is its own PR.
   real key to go back to `&kp`). Leave the existing behavior tabs in place.
 - **Where:** *inside the key grid, on every tab* (per the issue's "every
   key-grid tab"), rendered as **keycaps** so picking one reads like picking a key:
-  a faint **∅ cap = None**, a **▽ cap = Transparent** (a fully blank cap read as a
-  rendering gap, so the glyph is drawn faintly instead).
+  a **blank cap = None**, a **▽ cap = Transparent** (None is deliberately left
+  blank — a glyph reads as a specific key, and the tooltip/aria-label already
+  says "None").
   [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx) takes an optional
   `clearTiles` config and appends the keycaps among the keys of each tab's layout
   (styled identically to a key on that tab — same border, fill and size; the cap
@@ -531,9 +532,9 @@ behavior は「実際にいくつ枠を持つか」で形が分かれる。見�
 
 - **Step 1（最小・低リスク）** — **キーグリッドの各タブ内**に常設の **None /
   Transparent** タイル（issue の「全 key-grid タブ」に忠実）。**キーキャップ**として
-  描画し、選ぶ動作が「キーを選ぶ」のと同じに見えるようにする（薄い **∅ キャップ＝
-  None**、**▽ キャップ＝Transparent**。完全ブランクは描画抜けに見えるのでグリフを薄く
-  出す）。
+  描画し、選ぶ動作が「キーを選ぶ」のと同じに見えるようにする（**ブランクのキャップ＝
+  None**、**▽ キャップ＝Transparent**。None はあえて空——グリフを入れると特定キーに
+  見えるし、ツールチップ／aria-label で "None" が出る）。
   [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx) に任意の `clearTiles`
   設定を渡し、各タブのレイアウトのキーに混ぜて描画（そのタブのキーと同じ枠・塗り・
   サイズ。Other タブは combobox でキーではないので出さない）——Basic / ISO·JIS /

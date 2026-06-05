@@ -83,7 +83,7 @@ export interface HidUsagePage {
  * Persistent keycap-style "clear / make-transparent" tiles shown in the key
  * grid on every tab, so toggling a key to None / Transparent (and back, by
  * picking a key) never costs a round trip through the behavior tabs. Each tile
- * renders as a keycap — a faint ∅ cap for None, a ▽ cap for Transparent — and
+ * renders as a keycap — a blank cap for None, a ▽ cap for Transparent — and
  * switches the whole binding's behavior, so they're modelled as `aria-pressed`
  * toggles rather than part of the key (HID-usage) selection.
  */
@@ -522,7 +522,7 @@ const HidUsageGrid = ({
     );
   };
 
-  // Keycap-style clear tiles that live among the keys: a faint ∅ cap clears the
+  // Keycap-style clear tiles that live among the keys: a blank cap clears the
   // key (None) and a ▽ cap makes it transparent. Picking one reads like picking
   // a key, so it's obvious the binding changed. Each cap matches the size and
   // styling of the keys on the tab it's dropped into ("basic" = 1U shape keys,
@@ -548,9 +548,9 @@ const HidUsageGrid = ({
               : `w-16 h-16 p-1 rounded border text-center flex items-center justify-center text-xl shrink-0 ${fill}`
           }
         >
-          {/* Faint glyph: a clear cap is "special / empty", and a faint mark
-              reads better than a fully blank cap (which looks like a gap). */}
-          <span className={active ? undefined : "opacity-50"}>{tile.glyph}</span>
+          {/* None is intentionally a blank cap (its tooltip says "None"); a
+              glyph would read as a specific key. ▽ marks Transparent. */}
+          {tile.glyph}
         </Button>
       </Tooltip>
     );
