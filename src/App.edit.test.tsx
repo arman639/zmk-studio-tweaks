@@ -30,11 +30,13 @@ async function connectDemo(user: User) {
   await screen.findByRole("listbox", { name: /keymap layer/i });
 }
 
-// Select the "Q" key on the base layer and reassign it to None.
+// Select the "Q" key on the base layer and reassign it to None. "None" now
+// appears both as a persistent quick tile and as a Basic-group chip, so pick
+// the first match rather than asserting a single one.
 async function changeQtoNone(user: User) {
   const qKey = (await screen.findAllByRole("button", { name: /\bQ\b/ }))[0];
   await user.click(qKey);
-  await user.click(await screen.findByRole("radio", { name: "None" }));
+  await user.click((await screen.findAllByRole("radio", { name: "None" }))[0]);
 }
 
 describe("editing on the demo device drives the save lifecycle", () => {
@@ -87,6 +89,44 @@ describe("editing on the demo device drives the save lifecycle", () => {
       expect(
         screen.getByRole("button", { name: /\bQ\b/ })
       ).toBeInTheDocument()
+    );
+  });
+});
+
+describe("persistent clear tiles (key-picker rethink, step 1)", () => {
+  it("keeps None and Transparent reachable while editing a key", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    await connectDemo(user);
+
+    const qKey = (await screen.findAllByRole("button", { name: /\bQ\b/ }))[0];
+    await user.click(qKey);
+
+    // Both clear tiles are present without switching the behavior tabs.
+    expect(
+      (await screen.findAllByRole("radio", { name: "None" })).length
+    ).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByRole("radio", { name: "Transparent" })).length
+    ).toBeGreaterThan(0);
+  });
+
+  it("returns a None'd key to Key Press in one grid click", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    await connectDemo(user);
+    await changeQtoNone(user);
+
+    // With Q set to None its keymap tile no longer reads "Q", so the only
+    // remaining "Q" button is the live keycode grid's tile. Clicking it must
+    // promote the binding straight back to Key Press (no tab round trip).
+    const gridQ = await screen.findAllByRole("button", { name: /\bQ\b/ });
+    await user.click(gridQ[gridQ.length - 1]);
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("radio", { name: "Key Press" })
+          .some((r) => r.getAttribute("aria-checked") === "true")
+      ).toBe(true)
     );
   });
 });

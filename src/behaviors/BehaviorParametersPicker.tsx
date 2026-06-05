@@ -12,6 +12,13 @@ export interface BehaviorParametersPickerProps {
   layers: { id: number; name: string }[];
   onParam1Changed: (value?: number) => void;
   onParam2Changed: (value?: number) => void;
+  /**
+   * When set, a 0-parameter behavior (None / Transparent) renders a *live*
+   * keycode grid instead of the dimmed placeholder: picking a key promotes the
+   * binding straight to Key Press in one click, so toggling Key Press <-> None
+   * never costs a round trip back through the behavior tabs.
+   */
+  onPromoteToKeyPress?: (value?: number) => void;
 }
 
 export const BehaviorParametersPicker = ({
@@ -21,6 +28,7 @@ export const BehaviorParametersPicker = ({
   layers,
   onParam1Changed,
   onParam2Changed,
+  onPromoteToKeyPress,
 }: BehaviorParametersPickerProps) => {
   const [activeParam, setActiveParam] = useState<"p1" | "p2">("p1");
 
@@ -97,10 +105,20 @@ export const BehaviorParametersPicker = ({
             layers={layers}
             onValueChanged={onParam1Changed}
           />
+        ) : onPromoteToKeyPress ? (
+          // None / Transparent: keep the grid live so clicking a key returns
+          // the binding to Key Press in a single click (no tab round trip).
+          <HidUsagePicker
+            usagePages={[
+              { id: 7, min: 4 },
+              { id: 12 },
+            ]}
+            onValueChanged={onPromoteToKeyPress}
+          />
         ) : (
-          // 0-param behaviors (None, Transparent, Caps Word, ...) get the
-          // dimmed HID picker as a placeholder so the panel keeps its size
-          // when the user toggles to/from a `&kp`-style behavior.
+          // Other 0-param behaviors (Caps Word, ...) get the dimmed HID picker
+          // as a placeholder so the panel keeps its size when the user toggles
+          // to/from a `&kp`-style behavior.
           <HidUsagePicker
             disabled
             usagePages={[

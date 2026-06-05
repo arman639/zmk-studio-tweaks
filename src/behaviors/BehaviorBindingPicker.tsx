@@ -120,6 +120,21 @@ export const BehaviorBindingPicker = ({
     [behaviorId, behaviors]
   );
 
+  // Capability-aware id lookups for the always-present quick tiles. Matching by
+  // displayName mirrors how the rest of the picker classifies behaviors; a tile
+  // only renders when the connected firmware actually exposes that behavior.
+  const keyPressId = useMemo(
+    () => behaviors.find((b) => b.displayName === "Key Press")?.id,
+    [behaviors]
+  );
+  const quickBehaviors = useMemo(
+    () =>
+      ["None", "Transparent"]
+        .map((name) => behaviors.find((b) => b.displayName === name))
+        .filter((b): b is GetBehaviorDetailsResponse => !!b),
+    [behaviors]
+  );
+
   const sortedBehaviors = useMemo(
     () =>
       behaviors.slice().sort((a, b) => {
@@ -246,8 +261,56 @@ export const BehaviorBindingPicker = ({
     setParam2(binding.param2);
   }, [binding]);
 
+  const isClearBehavior = quickBehaviors.some((b) => b.id === behaviorId);
+  // Only offer the live keycode grid (instead of the dimmed placeholder) while
+  // a clear tile is active, and only if Key Press exists to promote to.
+  const promoteToKeyPress =
+    keyPressId !== undefined && isClearBehavior
+      ? (usage?: number) => {
+          if (usage === undefined) return;
+          setBehaviorId(keyPressId);
+          setParam1(usage);
+          setParam2(0);
+        }
+      : undefined;
+
+  const selectBehavior = (id: number) => {
+    if (id !== behaviorId) {
+      setBehaviorId(id);
+      setParam1(0);
+      setParam2(0);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2">
+      {quickBehaviors.length > 0 && (
+        <div
+          role="radiogroup"
+          aria-label="Quick clear"
+          className="flex flex-wrap items-center gap-1 pb-2 border-b border-base-300"
+        >
+          {quickBehaviors.map((b) => {
+            const selected = b.id === behaviorId;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => selectBehavior(b.id)}
+                className={`px-3 py-1 rounded border text-sm ${
+                  selected
+                    ? "bg-primary text-primary-content border-primary"
+                    : "bg-base-200 hover:bg-base-300 border-base-300"
+                }`}
+              >
+                {b.displayName}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="flex flex-col gap-1">
         <label className="text-sm uppercase tracking-widest font-bold text-primary">
           Behavior
@@ -329,6 +392,7 @@ export const BehaviorBindingPicker = ({
           layers={layers}
           onParam1Changed={setParam1}
           onParam2Changed={setParam2}
+          onPromoteToKeyPress={promoteToKeyPress}
         />
       )}
     </div>
