@@ -30,11 +30,16 @@ async function connectDemo(user: User) {
   await screen.findByRole("listbox", { name: /keymap layer/i });
 }
 
-// Select the "Q" key on the base layer and reassign it to None.
+// Select the "Q" key on the base layer and reassign it to None via the
+// persistent in-grid clear tile. The tile is an `aria-pressed` toggle, so the
+// `pressed` filter pins it apart from any keymap key that happens to read
+// "None".
 async function changeQtoNone(user: User) {
   const qKey = (await screen.findAllByRole("button", { name: /\bQ\b/ }))[0];
   await user.click(qKey);
-  await user.click(await screen.findByRole("radio", { name: "None" }));
+  await user.click(
+    await screen.findByRole("button", { name: "None", pressed: false })
+  );
 }
 
 describe("editing on the demo device drives the save lifecycle", () => {
@@ -87,6 +92,50 @@ describe("editing on the demo device drives the save lifecycle", () => {
       expect(
         screen.getByRole("button", { name: /\bQ\b/ })
       ).toBeInTheDocument()
+    );
+  });
+});
+
+describe("persistent clear tiles (key-picker rethink, step 1)", () => {
+  it("keeps None and Transparent reachable from the key grid", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    await connectDemo(user);
+
+    const qKey = (await screen.findAllByRole("button", { name: /\bQ\b/ }))[0];
+    await user.click(qKey);
+
+    // Both clear tiles sit in the key grid (aria-pressed toggles), reachable
+    // without leaving the Key Press grid or switching the behavior tabs.
+    expect(
+      await screen.findByRole("button", { name: "None", pressed: false })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Transparent", pressed: false })
+    ).toBeInTheDocument();
+  });
+
+  it("returns a None'd key to Key Press in one grid click", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    await connectDemo(user);
+    await changeQtoNone(user);
+
+    // The None tile now reports itself as active.
+    expect(
+      await screen.findByRole("button", { name: "None", pressed: true })
+    ).toBeInTheDocument();
+
+    // With Q set to None its keymap tile no longer reads "Q", so the only
+    // remaining "Q" button is the live keycode grid's tile. Clicking it must
+    // promote the binding straight back to Key Press (no tab round trip).
+    const gridQ = await screen.findAllByRole("button", { name: /\bQ\b/ });
+    await user.click(gridQ[gridQ.length - 1]);
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("radio", { name: "Key Press" })
+          .some((r) => r.getAttribute("aria-checked") === "true")
+      ).toBe(true)
     );
   });
 });

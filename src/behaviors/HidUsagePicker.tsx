@@ -79,6 +79,20 @@ export interface HidUsagePage {
   max?: number;
 }
 
+/**
+ * Persistent keycap-style "clear / make-transparent" tiles shown in the key
+ * grid on every tab, so toggling a key to None / Transparent (and back, by
+ * picking a key) never costs a round trip through the behavior tabs. Each tile
+ * renders as a keycap — a blank cap for None, a ▽ cap for Transparent — and
+ * switches the whole binding's behavior, so they're modelled as `aria-pressed`
+ * toggles rather than part of the key (HID-usage) selection.
+ */
+export interface ClearTilesConfig {
+  tiles: { id: number; label: string; glyph: string }[];
+  activeId?: number;
+  onSelect: (id: number) => void;
+}
+
 export interface HidUsagePickerProps {
   label?: string;
   value?: number;
@@ -90,6 +104,7 @@ export interface HidUsagePickerProps {
    * parameters, so switching to/from `&kp` doesn't cause a layout jump.
    */
   disabled?: boolean;
+  clearTiles?: ClearTilesConfig;
 }
 
 enum Mods {
@@ -137,6 +152,7 @@ const HidUsageGrid = ({
   value,
   onValueChanged,
   usagePages,
+  clearTiles,
 }: HidUsagePickerProps) => {
   const layout = useHostLayout();
   type Usage = {
@@ -506,6 +522,53 @@ const HidUsageGrid = ({
     );
   };
 
+  // Keycap-style clear tiles that live among the keys: a blank cap clears the
+  // key (None) and a ▽ cap makes it transparent. Picking one reads like picking
+  // a key, so it's obvious the binding changed. Each cap matches the size and
+  // styling of the keys on the tab it's dropped into ("basic" = 1U shape keys,
+  // "usage" = the w-16 flat-list keys), so it never looks like an odd chip.
+  const renderClearKeycap = (
+    tile: { id: number; label: string; glyph: string },
+    variant: "basic" | "usage"
+  ) => {
+    const active = tile.id === clearTiles!.activeId;
+    const fill = active
+      ? "bg-primary text-primary-content"
+      : "bg-base-200 hover:bg-base-300";
+    return (
+      <Tooltip key={`clear-${tile.id}`} label={tile.label}>
+        <Button
+          aria-label={tile.label}
+          aria-pressed={active}
+          onPress={() => clearTiles!.onSelect(tile.id)}
+          style={variant === "basic" ? { width: `${cellWidthPx(1)}px` } : undefined}
+          className={
+            variant === "basic"
+              ? `h-12 p-0.5 rounded border text-center flex items-center justify-center text-base leading-none shrink-0 ${fill}`
+              : `w-16 h-16 p-1 rounded border text-center flex items-center justify-center text-xl shrink-0 ${fill}`
+          }
+        >
+          {/* None is intentionally a blank cap (its tooltip says "None"); a
+              glyph would read as a specific key. ▽ marks Transparent. */}
+          {tile.glyph}
+        </Button>
+      </Tooltip>
+    );
+  };
+
+  // Trailing keycaps appended to the end of a key row/list, with a small gap so
+  // they read as a distinct "clear" pair rather than another letter key. The
+  // variant matches the keys on the tab they're appended to.
+  const makeTrailingClearKeycaps = (variant: "basic" | "usage") =>
+    clearTiles && clearTiles.tiles.length > 0 ? (
+      <>
+        <div className="w-4 shrink-0" aria-hidden="true" />
+        {clearTiles.tiles.map((tile) => renderClearKeycap(tile, variant))}
+      </>
+    ) : null;
+  const trailingClearKeycapsBasic = makeTrailingClearKeycaps("basic");
+  const trailingClearKeycapsUsage = makeTrailingClearKeycaps("usage");
+
   return (
     <div className="flex flex-col gap-1">
       <div className="h-8 flex flex-row items-center gap-2">
@@ -530,10 +593,15 @@ const HidUsageGrid = ({
           className="min-h-56 max-h-56 overflow-y-auto flex flex-wrap justify-start content-start gap-1 p-1 border rounded"
         >
           {searchResults.length === 0 ? (
-            <div className="p-2 text-base-content/60">No keys match "{search}".</div>
+            <div className="p-2 text-base-content/60 w-full">
+              No keys match "{search}".
+            </div>
           ) : (
             searchResults.map(renderUsageButton)
           )}
+          {/* Keep the clear tiles reachable even when the search matches
+              nothing, so a key can still be cleared mid-search. */}
+          {trailingClearKeycapsUsage}
         </div>
       ) : (
     <Tabs
@@ -571,24 +639,27 @@ const HidUsageGrid = ({
           {category === BASIC_TAB_ID ? (
             <div className="flex flex-col gap-1 w-fit">
               {ansiRows.map((row, i) => (
-                <div key={i} className="flex gap-1">
+                <div key={i} className="flex gap-1 items-end">
                   {row.map((cell, j) => renderBasicCell(cell, j))}
+                  {i === ansiRows.length - 1 && trailingClearKeycapsBasic}
                 </div>
               ))}
             </div>
           ) : category === ISO_JIS_TAB_ID ? (
             <div className="flex flex-col gap-1 w-fit">
               {isoOrJisRows.map((row, i) => (
-                <div key={i} className="flex gap-1">
+                <div key={i} className="flex gap-1 items-end">
                   {row.map((cell, j) => renderBasicCell(cell, j))}
+                  {i === isoOrJisRows.length - 1 && trailingClearKeycapsBasic}
                 </div>
               ))}
             </div>
           ) : category === "Numpad" ? (
             <div className="flex flex-col gap-1 w-fit">
               {numpadRows.map((row, i) => (
-                <div key={i} className="flex gap-1">
+                <div key={i} className="flex gap-1 items-end">
                   {row.map(renderBasicButton)}
+                  {i === numpadRows.length - 1 && trailingClearKeycapsBasic}
                 </div>
               ))}
             </div>
@@ -620,6 +691,11 @@ const HidUsageGrid = ({
                   </div>
                 ))}
               </div>
+              {trailingClearKeycapsBasic && (
+                <div className="flex flex-row gap-1 items-end">
+                  {trailingClearKeycapsBasic}
+                </div>
+              )}
             </div>
           ) : category === "Other" ? (
             <ComboBox
@@ -655,7 +731,10 @@ const HidUsageGrid = ({
               </Popover>
             </ComboBox>
           ) : (
-            categorizedUsages[category].map(renderUsageButton)
+            <>
+              {categorizedUsages[category].map(renderUsageButton)}
+              {trailingClearKeycapsUsage}
+            </>
           )}
         </TabPanel>
       ))}
@@ -671,6 +750,7 @@ export const HidUsagePicker = ({
   usagePages,
   onValueChanged,
   disabled,
+  clearTiles,
 }: HidUsagePickerProps) => {
   const mods = useMemo(() => {
     const flags = value ? value >> 24 : 0;
@@ -742,6 +822,7 @@ export const HidUsagePicker = ({
           value={value}
           onValueChanged={selectionChanged}
           usagePages={usagePages}
+          clearTiles={clearTiles}
         />
       </div>
     </div>

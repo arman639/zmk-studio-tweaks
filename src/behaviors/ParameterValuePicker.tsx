@@ -1,11 +1,12 @@
 import { BehaviorParameterValueDescription } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
-import { HidUsagePicker } from "./HidUsagePicker";
+import { ClearTilesConfig, HidUsagePicker } from "./HidUsagePicker";
 
 export interface ParameterValuePickerProps {
   value?: number;
   values: BehaviorParameterValueDescription[];
   layers: { id: number; name: string }[];
   onValueChanged: (value?: number) => void;
+  clearTiles?: ClearTilesConfig;
 }
 
 export const ParameterValuePicker = ({
@@ -13,6 +14,7 @@ export const ParameterValuePicker = ({
   values,
   layers,
   onValueChanged,
+  clearTiles,
 }: ParameterValuePickerProps) => {
   if (values.length == 0) {
     return <></>;
@@ -56,6 +58,7 @@ export const ParameterValuePicker = ({
             { id: 7, min: 4, max: values[0].hidUsage.keyboardMax },
             { id: 12, max: values[0].hidUsage.consumerMax },
           ]}
+          clearTiles={clearTiles}
         />
       );
     } else if (values[0].layerId) {

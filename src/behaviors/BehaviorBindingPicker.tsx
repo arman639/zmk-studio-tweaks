@@ -61,6 +61,14 @@ const STANDARD_BEHAVIOR_ORDER: Record<string, number> = Object.fromEntries(
 
 const GROUP_ORDER = ["Basic", "Layer", "Hold-Tap", "Mouse", "System", "Other"];
 
+// Keycap faces for the in-grid clear tiles: None is left blank (an empty key —
+// its tooltip/aria-label still says "None"), the conventional ▽ for Transparent.
+// Falls back to the behavior name on its cap.
+const CLEAR_TILE_GLYPHS: Record<string, string> = {
+  None: "",
+  Transparent: "▽",
+};
+
 interface BehaviorClass {
   tier: "standard" | "extension";
   group: string;
@@ -120,6 +128,21 @@ export const BehaviorBindingPicker = ({
     [behaviorId, behaviors]
   );
 
+  // Capability-aware id lookups for the persistent clear tiles. Matching by
+  // displayName mirrors how the rest of the picker classifies behaviors; a tile
+  // only renders when the connected firmware actually exposes that behavior.
+  const keyPressId = useMemo(
+    () => behaviors.find((b) => b.displayName === "Key Press")?.id,
+    [behaviors]
+  );
+  const clearBehaviors = useMemo(
+    () =>
+      ["None", "Transparent"]
+        .map((name) => behaviors.find((b) => b.displayName === name))
+        .filter((b): b is GetBehaviorDetailsResponse => !!b),
+    [behaviors]
+  );
+
   const sortedBehaviors = useMemo(
     () =>
       behaviors.slice().sort((a, b) => {
@@ -134,17 +157,21 @@ export const BehaviorBindingPicker = ({
   );
 
   const tieredBehaviors = useMemo(() => {
+    // None / Transparent are surfaced as keycap tiles in the key grid, so drop
+    // their redundant chips from the behavior groups.
+    const clearIds = new Set(clearBehaviors.map((b) => b.id));
     const out: Record<
       "standard" | "extension",
       Record<string, GetBehaviorDetailsResponse[]>
     > = { standard: {}, extension: {} };
     for (const b of sortedBehaviors) {
+      if (clearIds.has(b.id)) continue;
       const { tier, group } = classifyBehavior(b);
       if (!out[tier][group]) out[tier][group] = [];
       out[tier][group].push(b);
     }
     return out;
-  }, [sortedBehaviors]);
+  }, [sortedBehaviors, clearBehaviors]);
 
   const tiers: { key: "standard" | "extension"; title: string }[] = [
     { key: "standard", title: "ZMK Standard" },
@@ -181,6 +208,23 @@ export const BehaviorBindingPicker = ({
     ? activeGroup
     : availableGroupsForActiveTier[0];
 
+  const selectBehavior = (id: number) => {
+    if (id !== behaviorId) {
+      setBehaviorId(id);
+      setParam1(0);
+      setParam2(0);
+    }
+  };
+
+  // Shared look for the selectable behavior chips, so a future style tweak
+  // stays consistent across the picker.
+  const chipClass = (selected: boolean) =>
+    `px-3 py-1 rounded border text-sm ${
+      selected
+        ? "bg-primary text-primary-content border-primary"
+        : "bg-base-200 hover:bg-base-300 border-base-300"
+    }`;
+
   const renderBehaviorChip = (b: GetBehaviorDetailsResponse) => {
     const selected = b.id === behaviorId;
     return (
@@ -189,18 +233,8 @@ export const BehaviorBindingPicker = ({
         type="button"
         role="radio"
         aria-checked={selected}
-        onClick={() => {
-          if (b.id !== behaviorId) {
-            setBehaviorId(b.id);
-            setParam1(0);
-            setParam2(0);
-          }
-        }}
-        className={`px-3 py-1 rounded border text-sm ${
-          selected
-            ? "bg-primary text-primary-content border-primary"
-            : "bg-base-200 hover:bg-base-300 border-base-300"
-        }`}
+        onClick={() => selectBehavior(b.id)}
+        className={chipClass(selected)}
       >
         {b.displayName}
       </button>
@@ -245,6 +279,34 @@ export const BehaviorBindingPicker = ({
     setParam1(binding.param1);
     setParam2(binding.param2);
   }, [binding]);
+
+  const isClearBehavior = clearBehaviors.some((b) => b.id === behaviorId);
+  // Only offer the live keycode grid (instead of the dimmed placeholder) while
+  // a clear tile is active, and only if Key Press exists to promote to.
+  const promoteToKeyPress =
+    keyPressId !== undefined && isClearBehavior
+      ? (usage?: number) => {
+          if (usage === undefined) return;
+          setBehaviorId(keyPressId);
+          setParam1(usage);
+          setParam2(0);
+        }
+      : undefined;
+
+  // Persistent None / Transparent tiles rendered inside every key-grid tab (see
+  // HidUsagePicker). activeId highlights whichever is the current behavior.
+  const clearTiles =
+    clearBehaviors.length > 0
+      ? {
+          tiles: clearBehaviors.map((b) => ({
+            id: b.id,
+            label: b.displayName,
+            glyph: CLEAR_TILE_GLYPHS[b.displayName] ?? b.displayName,
+          })),
+          activeId: behaviorId,
+          onSelect: selectBehavior,
+        }
+      : undefined;
 
   return (
     <div className="flex flex-col gap-2">
@@ -329,6 +391,8 @@ export const BehaviorBindingPicker = ({
           layers={layers}
           onParam1Changed={setParam1}
           onParam2Changed={setParam2}
+          onPromoteToKeyPress={promoteToKeyPress}
+          clearTiles={clearTiles}
         />
       )}
     </div>
