@@ -28,3 +28,9 @@ src/data
 
 # Layout-import script's download cache (re-fetched on demand)
 scripts/.layout-cache/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

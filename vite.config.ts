@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react-swc";
 
 // https://vitejs.dev/config/
@@ -22,6 +22,8 @@ export default defineConfig({
   ],
   test: {
     setupFiles: ["./src/test/setup.ts"],
+    // Playwright specs in e2e/ are run by `npm run test:e2e`, not Vitest.
+    exclude: [...configDefaults.exclude, "e2e/**"],
     server: {
       deps: {
         // The ts-client ships ESM with extensionless relative imports (`./studio`).
