@@ -61,6 +61,13 @@ const STANDARD_BEHAVIOR_ORDER: Record<string, number> = Object.fromEntries(
 
 const GROUP_ORDER = ["Basic", "Layer", "Hold-Tap", "Mouse", "System", "Other"];
 
+// Keycap faces for the in-grid clear tiles: a blank cap for None, the
+// conventional ▽ for Transparent. Falls back to the behavior name on its cap.
+const CLEAR_TILE_GLYPHS: Record<string, string> = {
+  None: "",
+  Transparent: "▽",
+};
+
 interface BehaviorClass {
   tier: "standard" | "extension";
   group: string;
@@ -149,17 +156,21 @@ export const BehaviorBindingPicker = ({
   );
 
   const tieredBehaviors = useMemo(() => {
+    // None / Transparent are surfaced as keycap tiles in the key grid, so drop
+    // their redundant chips from the behavior groups.
+    const clearIds = new Set(clearBehaviors.map((b) => b.id));
     const out: Record<
       "standard" | "extension",
       Record<string, GetBehaviorDetailsResponse[]>
     > = { standard: {}, extension: {} };
     for (const b of sortedBehaviors) {
+      if (clearIds.has(b.id)) continue;
       const { tier, group } = classifyBehavior(b);
       if (!out[tier][group]) out[tier][group] = [];
       out[tier][group].push(b);
     }
     return out;
-  }, [sortedBehaviors]);
+  }, [sortedBehaviors, clearBehaviors]);
 
   const tiers: { key: "standard" | "extension"; title: string }[] = [
     { key: "standard", title: "ZMK Standard" },
@@ -289,6 +300,7 @@ export const BehaviorBindingPicker = ({
           tiles: clearBehaviors.map((b) => ({
             id: b.id,
             label: b.displayName,
+            glyph: CLEAR_TILE_GLYPHS[b.displayName] ?? b.displayName,
           })),
           activeId: behaviorId,
           onSelect: selectBehavior,

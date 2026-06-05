@@ -215,16 +215,19 @@ end state. Each step is its own PR.
   behavior; the active one is highlighted; the grid stays interactive (press any
   real key to go back to `&kp`). Leave the existing behavior tabs in place.
 - **Where:** *inside the key grid, on every tab* (per the issue's "every
-  key-grid tab"). [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx) takes
-  an optional `clearTiles` config and renders the tiles in the grid header, so
-  they show on Basic / ISO·JIS / Numpad / … and during search. The config is
-  threaded
+  key-grid tab"), rendered as **keycaps** so picking one reads like picking a key:
+  a **blank cap = None**, a **▽ cap = Transparent**.
+  [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx) takes an optional
+  `clearTiles` config and appends the keycaps among the keys of each tab's layout
+  (styled identically to a 1U key — same border, fill and size), on Basic /
+  ISO·JIS / Numpad / … and during search. The config is threaded
   [`BehaviorBindingPicker`](../../src/behaviors/BehaviorBindingPicker.tsx) →
   [`BehaviorParametersPicker`](../../src/behaviors/BehaviorParametersPicker.tsx) →
   [`ParameterValuePicker`](../../src/behaviors/ParameterValuePicker.tsx) so the
   tiles appear on every keycode grid the binding renders. Resolve the
   `None`/`Transparent` behaviorIds from the `behaviors` array by `displayName`;
-  render a tile only if present.
+  render a tile only if present. Their now-redundant chips are dropped from the
+  behavior groups (the keycaps replace them).
 - **A11y:** the tiles are **`aria-pressed` toggle buttons**, not radios. They
   switch the *whole* binding's behavior and reflect which clear behavior (if any)
   is active — so they're not a key (HID-usage) selection, and the same name no
@@ -516,16 +519,19 @@ behavior は「実際にいくつ枠を持つか」で形が分かれる。見�
 へ後戻りしない順で進める。各 Step は独立 PR。
 
 - **Step 1（最小・低リスク）** — **キーグリッドの各タブ内**に常設の **None /
-  Transparent** タイル（issue の「全 key-grid タブ」に忠実）。
+  Transparent** タイル（issue の「全 key-grid タブ」に忠実）。**キーキャップ**として
+  描画し、選ぶ動作が「キーを選ぶ」のと同じに見えるようにする（**ブランクのキャップ＝
+  None**、**▽ のキャップ＝Transparent**）。
   [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx) に任意の `clearTiles`
-  設定を渡し、グリッドのヘッダにタイルを描画——Basic / ISO·JIS / Numpad … と検索中も
-  表示。設定は
+  設定を渡し、各タブのレイアウトのキーに混ぜて描画（1U キーと同じ枠・塗り・サイズ）
+  ——Basic / ISO·JIS / Numpad … と検索中も表示。設定は
   [`BehaviorBindingPicker`](../../src/behaviors/BehaviorBindingPicker.tsx) →
   [`BehaviorParametersPicker`](../../src/behaviors/BehaviorParametersPicker.tsx) →
   [`ParameterValuePicker`](../../src/behaviors/ParameterValuePicker.tsx) と通し、
   binding が出す全キーコードグリッドに出る。クリックで behavior 差し替え、選択中は
-  ハイライト、クリア中もグリッドは操作可能（キー押下で1クリック `&kp` 復帰）。既存
-  タブは残す。**A11y:** タイルは radio ではなく **`aria-pressed` トグルボタン**——
+  ハイライト、クリア中もグリッドは操作可能（キー押下で1クリック `&kp` 復帰）。冗長に
+  なった None/Transparent のチップは behavior 群から外す（キーキャップで代替）。既存
+  タブ自体は残す。**A11y:** タイルは radio ではなく **`aria-pressed` トグルボタン**——
   binding 全体の behavior を切り替え、どのクリア behavior が有効かを表すだけで、キー
   （HID usage）選択ではない。同名が2つの radiogroup に跨る問題も解消（初版の
   `role="radio"` ストリップで先送りした a11y 指摘の解決）。behaviorId は `behaviors`
