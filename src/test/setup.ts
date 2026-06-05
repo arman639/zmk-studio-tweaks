@@ -2,6 +2,12 @@
 // only applies in the jsdom environment and leaves the node-env tests
 // (PhysicalLayout, mock) untouched.
 import "@testing-library/jest-dom/vitest";
+import { afterEach } from "vitest";
+import { cleanup } from "@testing-library/react";
+
+// Unmount React trees between tests (Vitest doesn't auto-register this without
+// `globals: true`), so renders don't stack up and duplicate matched elements.
+afterEach(() => cleanup());
 
 // jsdom has no ResizeObserver; PhysicalLayout observes its parent.
 if (typeof globalThis.ResizeObserver === "undefined") {

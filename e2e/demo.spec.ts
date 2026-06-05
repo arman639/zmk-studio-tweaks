@@ -43,3 +43,17 @@ test("selecting a key opens the behavior/key picker", async ({ page }) => {
   // The picker surfaces its cross-tab search box once a key is selected.
   await expect(page.getByPlaceholder(/filter keys/i)).toBeVisible();
 });
+
+test("editing a key lights the Save button", async ({ page }) => {
+  await connectDemo(page);
+
+  const save = page.getByRole("button", { name: "Save" });
+  await expect(save).toBeDisabled();
+
+  await page.getByRole("button", { name: /\bQ\b/ }).first().click();
+  await page.getByPlaceholder(/filter keys/i).waitFor();
+  await page.getByRole("radio", { name: "None" }).click();
+
+  // Editing must mark the device dirty so the change can be saved.
+  await expect(save).toBeEnabled();
+});
