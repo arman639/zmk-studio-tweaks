@@ -52,8 +52,13 @@ const clone = <T>(value: T): T =>
  */
 export function createMockHandler(fixture: MockKeyboardFixture): RpcHandler {
   const layers: Layer[] = clone(fixture.layers);
-  // The last-saved snapshot, restored by discardChanges.
-  let savedLayers: Layer[] = clone(fixture.layers);
+  // The last-saved snapshot, restored wholesale by discardChanges. Captures the
+  // full persisted state — bindings *and* the active physical layout — so a
+  // discard reverts a layout switch too, not just edits.
+  let saved = {
+    layers: clone(fixture.layers),
+    activeLayoutIndex: fixture.activeLayoutIndex,
+  };
   let activeLayoutIndex = fixture.activeLayoutIndex;
   let unsavedChanges = false;
   // Layers removed this session, kept so `restoreLayer` (undo of a remove) can
@@ -188,14 +193,18 @@ export function createMockHandler(fixture: MockKeyboardFixture): RpcHandler {
       }
 
       if (k.saveChanges) {
-        savedLayers = clone(layers);
+        saved = { layers: clone(layers), activeLayoutIndex };
         unsavedChanges = false;
         return resp(requestId, { keymap: { saveChanges: { ok: true } } });
       }
 
       if (k.discardChanges) {
-        // Revert to the last-saved snapshot, like real firmware.
-        layers.splice(0, layers.length, ...clone(savedLayers));
+        // Revert the whole persisted state to the last snapshot, like real
+        // firmware: bindings, the active physical layout, and the pending-undo
+        // set of removed layers.
+        layers.splice(0, layers.length, ...clone(saved.layers));
+        activeLayoutIndex = saved.activeLayoutIndex;
+        removed.clear();
         unsavedChanges = false;
         return resp(requestId, { keymap: { discardChanges: true } });
       }
