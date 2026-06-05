@@ -524,25 +524,29 @@ const HidUsageGrid = ({
 
   // Keycap-style clear tiles that live among the keys: a blank cap clears the
   // key (None) and a ▽ cap makes it transparent. Picking one reads like picking
-  // a key, so it's obvious the binding changed. Rendered key-sized so they sit
-  // inside the layout rather than off to the side.
-  const renderClearKeycap = (tile: { id: number; label: string; glyph: string }) => {
+  // a key, so it's obvious the binding changed. Each cap matches the size and
+  // styling of the keys on the tab it's dropped into ("basic" = 1U shape keys,
+  // "usage" = the w-16 flat-list keys), so it never looks like an odd chip.
+  const renderClearKeycap = (
+    tile: { id: number; label: string; glyph: string },
+    variant: "basic" | "usage"
+  ) => {
     const active = tile.id === clearTiles!.activeId;
+    const fill = active
+      ? "bg-primary text-primary-content"
+      : "bg-base-200 hover:bg-base-300";
     return (
       <Tooltip key={`clear-${tile.id}`} label={tile.label}>
         <Button
           aria-label={tile.label}
           aria-pressed={active}
           onPress={() => clearTiles!.onSelect(tile.id)}
-          // Same shape, border, fill and 1U width as a real keycap so the cap
-          // is clearly a key (a blank cap = None, a ▽ cap = Transparent) rather
-          // than a faint chip that blends into the background.
-          style={{ width: `${cellWidthPx(1)}px` }}
-          className={`h-12 p-0.5 rounded border text-center flex items-center justify-center text-base leading-none shrink-0 ${
-            active
-              ? "bg-primary text-primary-content"
-              : "bg-base-200 hover:bg-base-300"
-          }`}
+          style={variant === "basic" ? { width: `${cellWidthPx(1)}px` } : undefined}
+          className={
+            variant === "basic"
+              ? `h-12 p-0.5 rounded border text-center flex items-center justify-center text-base leading-none shrink-0 ${fill}`
+              : `w-16 h-16 p-1 rounded border text-center flex items-center justify-center text-xl shrink-0 ${fill}`
+          }
         >
           {tile.glyph}
         </Button>
@@ -551,14 +555,17 @@ const HidUsageGrid = ({
   };
 
   // Trailing keycaps appended to the end of a key row/list, with a small gap so
-  // they read as a distinct "clear" pair rather than another letter key.
-  const trailingClearKeycaps =
+  // they read as a distinct "clear" pair rather than another letter key. The
+  // variant matches the keys on the tab they're appended to.
+  const makeTrailingClearKeycaps = (variant: "basic" | "usage") =>
     clearTiles && clearTiles.tiles.length > 0 ? (
       <>
         <div className="w-4 shrink-0" aria-hidden="true" />
-        {clearTiles.tiles.map(renderClearKeycap)}
+        {clearTiles.tiles.map((tile) => renderClearKeycap(tile, variant))}
       </>
     ) : null;
+  const trailingClearKeycapsBasic = makeTrailingClearKeycaps("basic");
+  const trailingClearKeycapsUsage = makeTrailingClearKeycaps("usage");
 
   return (
     <div className="flex flex-col gap-1">
@@ -588,7 +595,7 @@ const HidUsageGrid = ({
           ) : (
             <>
               {searchResults.map(renderUsageButton)}
-              {trailingClearKeycaps}
+              {trailingClearKeycapsUsage}
             </>
           )}
         </div>
@@ -630,7 +637,7 @@ const HidUsageGrid = ({
               {ansiRows.map((row, i) => (
                 <div key={i} className="flex gap-1 items-end">
                   {row.map((cell, j) => renderBasicCell(cell, j))}
-                  {i === ansiRows.length - 1 && trailingClearKeycaps}
+                  {i === ansiRows.length - 1 && trailingClearKeycapsBasic}
                 </div>
               ))}
             </div>
@@ -639,7 +646,7 @@ const HidUsageGrid = ({
               {isoOrJisRows.map((row, i) => (
                 <div key={i} className="flex gap-1 items-end">
                   {row.map((cell, j) => renderBasicCell(cell, j))}
-                  {i === isoOrJisRows.length - 1 && trailingClearKeycaps}
+                  {i === isoOrJisRows.length - 1 && trailingClearKeycapsBasic}
                 </div>
               ))}
             </div>
@@ -648,7 +655,7 @@ const HidUsageGrid = ({
               {numpadRows.map((row, i) => (
                 <div key={i} className="flex gap-1 items-end">
                   {row.map(renderBasicButton)}
-                  {i === numpadRows.length - 1 && trailingClearKeycaps}
+                  {i === numpadRows.length - 1 && trailingClearKeycapsBasic}
                 </div>
               ))}
             </div>
@@ -680,14 +687,13 @@ const HidUsageGrid = ({
                   </div>
                 ))}
               </div>
-              {trailingClearKeycaps && (
+              {trailingClearKeycapsBasic && (
                 <div className="flex flex-row gap-1 items-end">
-                  {trailingClearKeycaps}
+                  {trailingClearKeycapsBasic}
                 </div>
               )}
             </div>
           ) : category === "Other" ? (
-            <>
             <ComboBox
               className="w-full p-2"
               defaultItems={categorizedUsages[category]}
@@ -720,16 +726,10 @@ const HidUsageGrid = ({
                 </ListBox>
               </Popover>
             </ComboBox>
-            {trailingClearKeycaps && (
-              <div className="flex flex-row gap-1 items-end p-2">
-                {trailingClearKeycaps}
-              </div>
-            )}
-            </>
           ) : (
             <>
               {categorizedUsages[category].map(renderUsageButton)}
-              {trailingClearKeycaps}
+              {trailingClearKeycapsUsage}
             </>
           )}
         </TabPanel>
