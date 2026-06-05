@@ -21,6 +21,7 @@ export default defineConfig({
     "TAURI_DEBUG",
   ],
   test: {
+    setupFiles: ["./src/test/setup.ts"],
     server: {
       deps: {
         // The ts-client ships ESM with extensionless relative imports (`./studio`).
