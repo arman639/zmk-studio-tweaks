@@ -196,6 +196,23 @@ export const BehaviorBindingPicker = ({
     ? activeGroup
     : availableGroupsForActiveTier[0];
 
+  const selectBehavior = (id: number) => {
+    if (id !== behaviorId) {
+      setBehaviorId(id);
+      setParam1(0);
+      setParam2(0);
+    }
+  };
+
+  // Shared look for the selectable behavior chips (the quick-clear tiles and the
+  // per-category chips), so a future style tweak can't drift between them.
+  const chipClass = (selected: boolean) =>
+    `px-3 py-1 rounded border text-sm ${
+      selected
+        ? "bg-primary text-primary-content border-primary"
+        : "bg-base-200 hover:bg-base-300 border-base-300"
+    }`;
+
   const renderBehaviorChip = (b: GetBehaviorDetailsResponse) => {
     const selected = b.id === behaviorId;
     return (
@@ -204,18 +221,8 @@ export const BehaviorBindingPicker = ({
         type="button"
         role="radio"
         aria-checked={selected}
-        onClick={() => {
-          if (b.id !== behaviorId) {
-            setBehaviorId(b.id);
-            setParam1(0);
-            setParam2(0);
-          }
-        }}
-        className={`px-3 py-1 rounded border text-sm ${
-          selected
-            ? "bg-primary text-primary-content border-primary"
-            : "bg-base-200 hover:bg-base-300 border-base-300"
-        }`}
+        onClick={() => selectBehavior(b.id)}
+        className={chipClass(selected)}
       >
         {b.displayName}
       </button>
@@ -274,14 +281,6 @@ export const BehaviorBindingPicker = ({
         }
       : undefined;
 
-  const selectBehavior = (id: number) => {
-    if (id !== behaviorId) {
-      setBehaviorId(id);
-      setParam1(0);
-      setParam2(0);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-2">
       {quickBehaviors.length > 0 && (
@@ -299,11 +298,7 @@ export const BehaviorBindingPicker = ({
                 role="radio"
                 aria-checked={selected}
                 onClick={() => selectBehavior(b.id)}
-                className={`px-3 py-1 rounded border text-sm ${
-                  selected
-                    ? "bg-primary text-primary-content border-primary"
-                    : "bg-base-200 hover:bg-base-300 border-base-300"
-                }`}
+                className={chipClass(selected)}
               >
                 {b.displayName}
               </button>
