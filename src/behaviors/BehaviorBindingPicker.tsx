@@ -120,14 +120,14 @@ export const BehaviorBindingPicker = ({
     [behaviorId, behaviors]
   );
 
-  // Capability-aware id lookups for the always-present quick tiles. Matching by
+  // Capability-aware id lookups for the persistent clear tiles. Matching by
   // displayName mirrors how the rest of the picker classifies behaviors; a tile
   // only renders when the connected firmware actually exposes that behavior.
   const keyPressId = useMemo(
     () => behaviors.find((b) => b.displayName === "Key Press")?.id,
     [behaviors]
   );
-  const quickBehaviors = useMemo(
+  const clearBehaviors = useMemo(
     () =>
       ["None", "Transparent"]
         .map((name) => behaviors.find((b) => b.displayName === name))
@@ -204,8 +204,8 @@ export const BehaviorBindingPicker = ({
     }
   };
 
-  // Shared look for the selectable behavior chips (the quick-clear tiles and the
-  // per-category chips), so a future style tweak can't drift between them.
+  // Shared look for the selectable behavior chips, so a future style tweak
+  // stays consistent across the picker.
   const chipClass = (selected: boolean) =>
     `px-3 py-1 rounded border text-sm ${
       selected
@@ -268,7 +268,7 @@ export const BehaviorBindingPicker = ({
     setParam2(binding.param2);
   }, [binding]);
 
-  const isClearBehavior = quickBehaviors.some((b) => b.id === behaviorId);
+  const isClearBehavior = clearBehaviors.some((b) => b.id === behaviorId);
   // Only offer the live keycode grid (instead of the dimmed placeholder) while
   // a clear tile is active, and only if Key Press exists to promote to.
   const promoteToKeyPress =
@@ -281,31 +281,22 @@ export const BehaviorBindingPicker = ({
         }
       : undefined;
 
+  // Persistent None / Transparent tiles rendered inside every key-grid tab (see
+  // HidUsagePicker). activeId highlights whichever is the current behavior.
+  const clearTiles =
+    clearBehaviors.length > 0
+      ? {
+          tiles: clearBehaviors.map((b) => ({
+            id: b.id,
+            label: b.displayName,
+          })),
+          activeId: behaviorId,
+          onSelect: selectBehavior,
+        }
+      : undefined;
+
   return (
     <div className="flex flex-col gap-2">
-      {quickBehaviors.length > 0 && (
-        <div
-          role="radiogroup"
-          aria-label="Quick clear"
-          className="flex flex-wrap items-center gap-1 pb-2 border-b border-base-300"
-        >
-          {quickBehaviors.map((b) => {
-            const selected = b.id === behaviorId;
-            return (
-              <button
-                key={b.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => selectBehavior(b.id)}
-                className={chipClass(selected)}
-              >
-                {b.displayName}
-              </button>
-            );
-          })}
-        </div>
-      )}
       <div className="flex flex-col gap-1">
         <label className="text-sm uppercase tracking-widest font-bold text-primary">
           Behavior
@@ -388,6 +379,7 @@ export const BehaviorBindingPicker = ({
           onParam1Changed={setParam1}
           onParam2Changed={setParam2}
           onPromoteToKeyPress={promoteToKeyPress}
+          clearTiles={clearTiles}
         />
       )}
     </div>

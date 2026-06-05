@@ -2,7 +2,7 @@ import { BehaviorBindingParametersSet } from "@zmkfirmware/zmk-studio-ts-client/
 import { Tab, TabList, TabPanel, Tabs } from "react-aria-components";
 import { useEffect, useState } from "react";
 import { ParameterValuePicker } from "./ParameterValuePicker";
-import { HidUsagePicker } from "./HidUsagePicker";
+import { ClearTilesConfig, HidUsagePicker } from "./HidUsagePicker";
 import { validateValue } from "./parameters";
 
 export interface BehaviorParametersPickerProps {
@@ -19,6 +19,12 @@ export interface BehaviorParametersPickerProps {
    * never costs a round trip back through the behavior tabs.
    */
   onPromoteToKeyPress?: (value?: number) => void;
+  /**
+   * Persistent None / Transparent tiles shown in every key-grid tab (see
+   * {@link ClearTilesConfig}). Threaded onto each keycode grid this picker
+   * renders so clearing a key is reachable without leaving the grid.
+   */
+  clearTiles?: ClearTilesConfig;
 }
 
 export const BehaviorParametersPicker = ({
@@ -29,6 +35,7 @@ export const BehaviorParametersPicker = ({
   onParam1Changed,
   onParam2Changed,
   onPromoteToKeyPress,
+  clearTiles,
 }: BehaviorParametersPickerProps) => {
   const [activeParam, setActiveParam] = useState<"p1" | "p2">("p1");
 
@@ -104,6 +111,7 @@ export const BehaviorParametersPicker = ({
             value={param1}
             layers={layers}
             onValueChanged={onParam1Changed}
+            clearTiles={clearTiles}
           />
         ) : onPromoteToKeyPress ? (
           // None / Transparent: keep the grid live so clicking a key returns
@@ -114,6 +122,7 @@ export const BehaviorParametersPicker = ({
               { id: 12 },
             ]}
             onValueChanged={onPromoteToKeyPress}
+            clearTiles={clearTiles}
           />
         ) : (
           // Other 0-param behaviors (Caps Word, ...) get the dimmed HID picker
@@ -136,6 +145,7 @@ export const BehaviorParametersPicker = ({
             value={param2}
             layers={layers}
             onValueChanged={onParam2Changed}
+            clearTiles={clearTiles}
           />
         </TabPanel>
       )}

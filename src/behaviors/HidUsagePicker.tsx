@@ -79,6 +79,19 @@ export interface HidUsagePage {
   max?: number;
 }
 
+/**
+ * Persistent "clear / make-transparent" tiles shown in the key grid header on
+ * every tab, so toggling a key to None / Transparent (and back, by picking a
+ * key) never costs a round trip through the behavior tabs. The tiles switch the
+ * whole binding's behavior, so they're modelled as `aria-pressed` toggles
+ * rather than part of the key (HID-usage) selection.
+ */
+export interface ClearTilesConfig {
+  tiles: { id: number; label: string }[];
+  activeId?: number;
+  onSelect: (id: number) => void;
+}
+
 export interface HidUsagePickerProps {
   label?: string;
   value?: number;
@@ -90,6 +103,7 @@ export interface HidUsagePickerProps {
    * parameters, so switching to/from `&kp` doesn't cause a layout jump.
    */
   disabled?: boolean;
+  clearTiles?: ClearTilesConfig;
 }
 
 enum Mods {
@@ -137,6 +151,7 @@ const HidUsageGrid = ({
   value,
   onValueChanged,
   usagePages,
+  clearTiles,
 }: HidUsagePickerProps) => {
   const layout = useHostLayout();
   type Usage = {
@@ -512,6 +527,27 @@ const HidUsageGrid = ({
         <Label className="text-sm uppercase tracking-widest font-bold text-primary shrink-0">
           Key
         </Label>
+        {clearTiles && clearTiles.tiles.length > 0 && (
+          <div className="flex items-center gap-1 shrink-0">
+            {clearTiles.tiles.map((tile) => {
+              const active = tile.id === clearTiles.activeId;
+              return (
+                <Button
+                  key={tile.id}
+                  aria-pressed={active}
+                  onPress={() => clearTiles.onSelect(tile.id)}
+                  className={`px-2 py-0.5 rounded border text-xs ${
+                    active
+                      ? "bg-primary text-primary-content border-primary"
+                      : "bg-base-200 hover:bg-base-300 border-base-300"
+                  }`}
+                >
+                  {tile.label}
+                </Button>
+              );
+            })}
+          </div>
+        )}
         <div className="ml-auto relative w-64 max-w-full">
           <Search className="size-4 absolute left-2 top-1/2 -translate-y-1/2 text-base-content/50 pointer-events-none" />
           <input
@@ -671,6 +707,7 @@ export const HidUsagePicker = ({
   usagePages,
   onValueChanged,
   disabled,
+  clearTiles,
 }: HidUsagePickerProps) => {
   const mods = useMemo(() => {
     const flags = value ? value >> 24 : 0;
@@ -742,6 +779,7 @@ export const HidUsagePicker = ({
           value={value}
           onValueChanged={selectionChanged}
           usagePages={usagePages}
+          clearTiles={clearTiles}
         />
       </div>
     </div>
