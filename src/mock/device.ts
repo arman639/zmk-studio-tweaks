@@ -52,6 +52,13 @@ const clone = <T>(value: T): T =>
  */
 export function createMockHandler(fixture: MockKeyboardFixture): RpcHandler {
   const layers: Layer[] = clone(fixture.layers);
+  // The last-saved snapshot, restored wholesale by discardChanges. Captures the
+  // full persisted state — bindings *and* the active physical layout — so a
+  // discard reverts a layout switch too, not just edits.
+  let saved = {
+    layers: clone(fixture.layers),
+    activeLayoutIndex: fixture.activeLayoutIndex,
+  };
   let activeLayoutIndex = fixture.activeLayoutIndex;
   let unsavedChanges = false;
   // Layers removed this session, kept so `restoreLayer` (undo of a remove) can
@@ -70,7 +77,7 @@ export function createMockHandler(fixture: MockKeyboardFixture): RpcHandler {
   const nextLayerId = () =>
     layers.reduce((max, l) => Math.max(max, l.id), 0) + 1;
 
-  return (request: Request): Response => {
+  const handle = (request: Request): Response => {
     const requestId = request.requestId;
 
     if (request.core) {
@@ -186,11 +193,18 @@ export function createMockHandler(fixture: MockKeyboardFixture): RpcHandler {
       }
 
       if (k.saveChanges) {
+        saved = { layers: clone(layers), activeLayoutIndex };
         unsavedChanges = false;
         return resp(requestId, { keymap: { saveChanges: { ok: true } } });
       }
 
       if (k.discardChanges) {
+        // Revert the whole persisted state to the last snapshot, like real
+        // firmware: bindings, the active physical layout, and the pending-undo
+        // set of removed layers.
+        layers.splice(0, layers.length, ...clone(saved.layers));
+        activeLayoutIndex = saved.activeLayoutIndex;
+        removed.clear();
         unsavedChanges = false;
         return resp(requestId, { keymap: { discardChanges: true } });
       }
@@ -293,6 +307,26 @@ export function createMockHandler(fixture: MockKeyboardFixture): RpcHandler {
 
     // Unhandled: resolve with a bare request/response so `call_rpc` doesn't hang.
     return resp(requestId, {});
+  };
+
+  // Real firmware pushes an `unsavedChangesStatusChanged` notification whenever
+  // the dirty state flips — that's what lights/clears the Save button (the app
+  // doesn't re-poll checkUnsavedChanges after edits). Emit it alongside the
+  // response whenever a request changed the dirty state.
+  return (request: Request): Response | Response[] => {
+    const wasDirty = unsavedChanges;
+    const response = handle(request);
+    if (unsavedChanges !== wasDirty) {
+      return [
+        response,
+        {
+          notification: {
+            keymap: { unsavedChangesStatusChanged: unsavedChanges },
+          },
+        },
+      ];
+    }
+    return response;
   };
 }
 

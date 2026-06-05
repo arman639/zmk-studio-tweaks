@@ -77,4 +77,48 @@ describe("mock device over the real RPC stack", () => {
       ?.getKeymap;
     expect(after!.layers[0].bindings[0]).toEqual(newBinding);
   });
+
+  it("pushes an unsavedChangesStatusChanged notification on edit", async () => {
+    const conn = connectMock();
+    const notifications = conn.notification_readable.getReader();
+
+    const layerId = (await call_rpc(conn, { keymap: { getKeymap: true } })).keymap
+      ?.getKeymap?.layers[0].id;
+    await call_rpc(conn, {
+      keymap: {
+        setLayerBinding: {
+          layerId: layerId!,
+          keyPosition: 0,
+          binding: { behaviorId: 5, param1: 0, param2: 0 },
+        },
+      },
+    });
+
+    const note = await notifications.read();
+    expect(note.value?.keymap?.unsavedChangesStatusChanged).toBe(true);
+  });
+
+  it("reverts edited bindings on discardChanges", async () => {
+    const conn = connectMock();
+
+    const before = (await call_rpc(conn, { keymap: { getKeymap: true } })).keymap
+      ?.getKeymap;
+    const layerId = before!.layers[0].id;
+    const original = before!.layers[0].bindings[0];
+
+    await call_rpc(conn, {
+      keymap: {
+        setLayerBinding: {
+          layerId,
+          keyPosition: 0,
+          binding: { behaviorId: 5, param1: 0, param2: 0 },
+        },
+      },
+    });
+    await call_rpc(conn, { keymap: { discardChanges: true } });
+
+    const after = (await call_rpc(conn, { keymap: { getKeymap: true } })).keymap
+      ?.getKeymap;
+    expect(after!.layers[0].bindings[0]).toEqual(original);
+  });
 });
