@@ -105,6 +105,20 @@ export interface HidUsagePickerProps {
    */
   disabled?: boolean;
   clearTiles?: ClearTilesConfig;
+  /**
+   * Customise the implicit-modifier column (the one that bakes modifiers into
+   * the picked keycode, e.g. picking C + L Ctrl → `LC(C)` = Ctrl+C in one
+   * keypress). Defaults to the always-visible "+ Modifier" column on the left.
+   * The Tap slot of the slot editor sets `side: "right"` + `collapsible` so it
+   * doesn't visually compete with the Hold slot's (semantically different)
+   * modifier picker.
+   */
+  modifiers?: {
+    side?: "left" | "right";
+    collapsible?: boolean;
+    label?: string;
+    hint?: string;
+  };
 }
 
 enum Mods {
@@ -751,12 +765,23 @@ export const HidUsagePicker = ({
   onValueChanged,
   disabled,
   clearTiles,
+  modifiers,
 }: HidUsagePickerProps) => {
+  const modSide = modifiers?.side ?? "left";
+  const modCollapsible = modifiers?.collapsible ?? false;
+  const modLabel = modifiers?.label ?? "+ Modifier";
+  const [modsOpen, setModsOpen] = useState(false);
+
   const mods = useMemo(() => {
     const flags = value ? value >> 24 : 0;
 
     return all_mods.filter((m) => m & flags).map((m) => m.toLocaleString());
   }, [value]);
+
+  const activeModSummary = mods
+    .map((m) => mod_labels[parseInt(m) as Mods])
+    .join(" + ");
+  const showModChecks = !modCollapsible || modsOpen;
 
   const selectionChanged = useCallback(
     (e: number | undefined) => {
@@ -781,7 +806,75 @@ export const HidUsagePicker = ({
       const new_value = mask_mods(value) | (mod_flags << 24);
       onValueChanged(new_value);
     },
-    [value],
+    [value, onValueChanged],
+  );
+
+  const modifierColumn = (
+    <div className="flex flex-col gap-1 shrink-0">
+      <div className="h-8 flex items-center">
+        {modCollapsible ? (
+          <button
+            type="button"
+            onClick={() => setModsOpen((o) => !o)}
+            aria-expanded={modsOpen}
+            title={modifiers?.hint}
+            className="flex items-center gap-1 text-sm uppercase tracking-widest font-bold text-primary"
+          >
+            <ChevronDown
+              size={14}
+              className={`transition-transform ${modsOpen ? "" : "-rotate-90"}`}
+            />
+            <span>{modLabel}</span>
+            {!modsOpen && mods.length > 0 && (
+              <span className="normal-case tracking-normal font-normal text-xs text-base-content/70">
+                {activeModSummary}
+              </span>
+            )}
+          </button>
+        ) : (
+          <Label
+            id="hid-usage-picker"
+            className="text-sm uppercase tracking-widest font-bold text-primary"
+          >
+            {modLabel}
+          </Label>
+        )}
+      </div>
+      {showModChecks && (
+        <>
+          <CheckboxGroup
+            aria-label={label ? `Implicit modifiers for ${label}` : "Implicit modifiers"}
+            className="flex flex-col gap-px rounded-md"
+            value={mods}
+            onChange={modifiersChanged}
+          >
+            {all_mods.map((m) => (
+              <Checkbox
+                key={m}
+                value={m.toLocaleString()}
+                className="text-nowrap cursor-pointer flex px-3 py-1 items-center rac-selected:bg-primary border-base-100 bg-base-300 hover:bg-base-100 first:rounded-t-md last:rounded-b-md rac-selected:text-primary-content"
+              >
+                {mod_labels[m]}
+              </Checkbox>
+            ))}
+          </CheckboxGroup>
+          {modifiers?.hint && (
+            <p className="text-xs text-base-content/60 w-32">{modifiers.hint}</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  const grid = (
+    <div className="flex-1 min-w-0">
+      <HidUsageGrid
+        value={value}
+        onValueChanged={selectionChanged}
+        usagePages={usagePages}
+        clearTiles={clearTiles}
+      />
+    </div>
   );
 
   return (
@@ -791,40 +884,17 @@ export const HidUsagePicker = ({
       }`}
       aria-disabled={disabled || undefined}
     >
-      <div className="flex flex-col gap-1 shrink-0">
-        <div className="h-8 flex items-center">
-          <Label
-            id="hid-usage-picker"
-            className="text-sm uppercase tracking-widest font-bold text-primary"
-          >
-            + Modifier
-          </Label>
-        </div>
-        <CheckboxGroup
-          aria-label={label ? `Implicit modifiers for ${label}` : "Implicit modifiers"}
-          className="flex flex-col gap-px rounded-md"
-          value={mods}
-          onChange={modifiersChanged}
-        >
-          {all_mods.map((m) => (
-            <Checkbox
-              key={m}
-              value={m.toLocaleString()}
-              className="text-nowrap cursor-pointer flex px-3 py-1 items-center rac-selected:bg-primary border-base-100 bg-base-300 hover:bg-base-100 first:rounded-t-md last:rounded-b-md rac-selected:text-primary-content"
-            >
-              {mod_labels[m]}
-            </Checkbox>
-          ))}
-        </CheckboxGroup>
-      </div>
-      <div className="flex-1 min-w-0">
-        <HidUsageGrid
-          value={value}
-          onValueChanged={selectionChanged}
-          usagePages={usagePages}
-          clearTiles={clearTiles}
-        />
-      </div>
+      {modSide === "right" ? (
+        <>
+          {grid}
+          {modifierColumn}
+        </>
+      ) : (
+        <>
+          {modifierColumn}
+          {grid}
+        </>
+      )}
     </div>
   );
 };

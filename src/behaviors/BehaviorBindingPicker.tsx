@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  GetBehaviorDetailsResponse,
-  BehaviorBindingParametersSet,
-} from "@zmkfirmware/zmk-studio-ts-client/behaviors";
+import { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
 import { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import { BehaviorParametersPicker } from "./BehaviorParametersPicker";
-import { validateValue } from "./parameters";
+import { SlotBindingPicker } from "./SlotBindingPicker";
+import { validateBinding } from "./parameters";
+import { bindingToSlots, buildDerivationRegistry } from "./slots";
 
 export interface BehaviorBindingPickerProps {
   binding: BehaviorBinding;
@@ -89,30 +88,6 @@ function classifyBehavior(b: GetBehaviorDetailsResponse): BehaviorClass {
   return { tier: "extension", group: "Other" };
 }
 
-function validateBinding(
-  metadata: BehaviorBindingParametersSet[],
-  layerIds: number[],
-  param1?: number,
-  param2?: number
-): boolean {
-  if (
-    (param1 === undefined || param1 === 0) &&
-    metadata.every((s) => !s.param1 || s.param1.length === 0)
-  ) {
-    return true;
-  }
-
-  const matchingSet = metadata.find((s) =>
-    validateValue(layerIds, param1, s.param1)
-  );
-
-  if (!matchingSet) {
-    return false;
-  }
-
-  return validateValue(layerIds, param2, matchingSet.param2);
-}
-
 export const BehaviorBindingPicker = ({
   binding,
   layers,
@@ -143,6 +118,20 @@ export const BehaviorBindingPicker = ({
     [behaviors]
   );
 
+  // Slot model (Step 2): the four core behaviors are edited through the Tap /
+  // Hold slot surface and derived from it, so their chips are hidden — the
+  // surface owns them, avoiding a two-ways-to-edit-one-binding sync hazard.
+  const registry = useMemo(() => buildDerivationRegistry(behaviors), [behaviors]);
+  const derivedChipIds = useMemo(
+    () =>
+      new Set(
+        (["kp", "mt", "lt", "mo"] as const)
+          .map((core) => registry.idByCore[core])
+          .filter((id): id is number => id !== undefined)
+      ),
+    [registry]
+  );
+
   const sortedBehaviors = useMemo(
     () =>
       behaviors.slice().sort((a, b) => {
@@ -157,21 +146,25 @@ export const BehaviorBindingPicker = ({
   );
 
   const tieredBehaviors = useMemo(() => {
-    // None / Transparent are surfaced as keycap tiles in the key grid, so drop
-    // their redundant chips from the behavior groups.
-    const clearIds = new Set(clearBehaviors.map((b) => b.id));
+    // None / Transparent are surfaced as keycap tiles in the key grid, and the
+    // four core behaviors live on the slot surface, so drop all of their
+    // redundant chips from the behavior groups.
+    const hiddenIds = new Set([
+      ...clearBehaviors.map((b) => b.id),
+      ...derivedChipIds,
+    ]);
     const out: Record<
       "standard" | "extension",
       Record<string, GetBehaviorDetailsResponse[]>
     > = { standard: {}, extension: {} };
     for (const b of sortedBehaviors) {
-      if (clearIds.has(b.id)) continue;
+      if (hiddenIds.has(b.id)) continue;
       const { tier, group } = classifyBehavior(b);
       if (!out[tier][group]) out[tier][group] = [];
       out[tier][group].push(b);
     }
     return out;
-  }, [sortedBehaviors, clearBehaviors]);
+  }, [sortedBehaviors, clearBehaviors, derivedChipIds]);
 
   const tiers: { key: "standard" | "extension"; title: string }[] = [
     { key: "standard", title: "ZMK Standard" },
@@ -308,12 +301,37 @@ export const BehaviorBindingPicker = ({
         }
       : undefined;
 
+  // The slot surface edits the same local behaviorId/param1/param2 the chips do,
+  // so there's a single source of truth and no chip<->slot sync to maintain.
+  const currentBinding: BehaviorBinding = {
+    behaviorId,
+    param1: param1 ?? 0,
+    param2: param2 ?? 0,
+  };
+  const isCoreBinding = bindingToSlots(currentBinding, registry) !== null;
+  const setBindingFromSlots = (b: BehaviorBinding) => {
+    setBehaviorId(b.behaviorId);
+    setParam1(b.param1);
+    setParam2(b.param2);
+  };
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-3">
+      <SlotBindingPicker
+        binding={currentBinding}
+        registry={registry}
+        layers={layers}
+        onBindingChanged={setBindingFromSlots}
+        clearTiles={clearTiles}
+      />
+      <div className="flex flex-col gap-1 border-t pt-2">
         <label className="text-sm uppercase tracking-widest font-bold text-primary">
-          Behavior
+          Not yet on the slot surface
         </label>
+        <p className="text-xs text-base-content/60">
+          Temporary home for behaviors the slots don&apos;t cover yet — these move
+          onto tiles and the slot surface in later steps.
+        </p>
         <div className="flex flex-col gap-1">
           <div role="tablist" aria-label="Behavior tier" className="flex border-b">
               {availableTiers.map((tier) => {
@@ -383,7 +401,9 @@ export const BehaviorBindingPicker = ({
             </div>
         </div>
       </div>
-      {metadata && (
+      {/* Core behaviors are edited on the slot surface above; only non-core
+          behaviors (Sticky Key, Mouse, System, ...) keep the params picker. */}
+      {metadata && !isCoreBinding && (
         <BehaviorParametersPicker
           metadata={metadata}
           param1={param1}

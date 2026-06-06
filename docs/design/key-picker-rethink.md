@@ -6,8 +6,10 @@
 > issue is the user-facing summary; this note is the working design. English is
 > authoritative; a Japanese mirror follows below.
 >
-> Status: **design only — no implementation yet.** Direction is reviewable here
-> before any code lands.
+> Status: **Step 1 shipped (PR #27); Step 2 in progress.** The slot model
+> converged on the **Normal / Hold mode** framing (§2) — earlier drafts said
+> "Tap / Hold", renamed because "Tap" wrongly implies short-press-only for a plain
+> `&kp`. Coverage of every standard ZMK behavior is verified in §4a.
 
 ---
 
@@ -63,29 +65,75 @@ and each parameter value description is one of `constant` / `range` / `hidUsage`
 
 ## 2. Core insight: the behavior is an output, not the first input
 
-What a person holds in their head is *"what's on tap, what's on hold"* — not the
-name `&mt`. For the typing + layer + hold-tap core (≈90% of real keymaps) the
-behavior follows mechanically from which slots are filled:
+What a person holds in their head is *"what does this key do, and does holding it
+do something else"* — not the name `&mt`. For the typing + layer + hold-tap core
+(≈90% of real keymaps) the behavior follows mechanically from two slots:
 
-| Tap slot       | Hold slot | Derived behavior              | Firmware                         |
-| -------------- | --------- | ----------------------------- | -------------------------------- |
-| key            | (empty)   | Key Press                     | `&kp <key>`                      |
-| key            | modifier  | Mod-Tap                       | `&mt <mod> <key>`                |
-| key            | layer     | Layer-Tap                     | `&lt <layer> <key>`              |
-| (empty / None) | layer     | Momentary Layer               | `&mo <layer>`                    |
-| (empty)        | modifier  | a plain held modifier         | `&kp <mod>` (e.g. `&kp LSHIFT`)  |
-| (empty)        | (empty)   | None                          | `&none`                          |
+- **Normal** — what the key does on a normal press. A keystroke (including a lone
+  modifier such as `LSHIFT`), a layer switch, or nothing (None / Transparent).
+  *Always present* — every key has a Normal action (even if that action is None).
+- **Hold mode** — an **optional** *different* action when the key is held long: a
+  modifier (→ Mod-Tap) or a layer (→ Layer-Tap / Momentary Layer). Off by default.
 
-In this range the **behavior selector is unnecessary**: fill the two slots and
-the name is determined. The parameter panel already exposes Hold / Tap tabs, so
-half the groundwork exists. The change is an inversion of order:
+| Normal              | Hold mode | Derived behavior      | Firmware              |
+| ------------------- | --------- | --------------------- | --------------------- |
+| key                 | (off)     | Key Press             | `&kp <key>`           |
+| modifier (as a key) | (off)     | Key Press             | `&kp <mod>`           |
+| key                 | modifier  | Mod-Tap               | `&mt <mod> <key>`     |
+| key                 | layer     | Layer-Tap             | `&lt <layer> <key>`   |
+| None                | layer     | Momentary Layer       | `&mo <layer>`         |
+| layer (sub-mode)    | (off)     | To / Toggle / Sticky  | `&to` / `&tog` / `&sl`|
+| Transparent         | (off)     | Transparent           | `&trans`              |
+| None                | (off)     | None                  | `&none`               |
 
-> "pick a behavior, then fill Hold/Tap" → **"fill Hold/Tap, and the behavior is derived."**
+The change is an inversion of order:
 
-Note the two `&kp` rows: a key on tap with nothing held is `&kp <key>`, and a
-modifier held with nothing on tap is also a `&kp` — just with a modifier keycode.
-Mod-Tap only appears when **both** slots are filled (a real key on tap *and* a
-modifier on hold). The reverse-lookup label (§3b) is what keeps this legible.
+> "pick a behavior, then fill its params" → **"set Normal (and optionally Hold mode), and the behavior is derived."**
+
+### 2a. Why "Normal / Hold mode", not "Tap / Hold"
+
+"Tap" means *short press*, but a plain `&kp A` is **not** short-press-specific: A
+is active for the whole press (held → it auto-repeats). Labelling that slot "Tap"
+hides that holding also does something. So the base slot is **Normal** — the key's
+action on press, regardless of duration. The tap-vs-hold *split* exists only for
+hold-tap behaviors, and surfaces in the **derived name** (Mod-Tap, Layer-Tap), not
+in the slot labels.
+
+Only **Hold mode** carries an on/off toggle. There is no valid "Normal-off +
+Hold-on" behavior — `&mt`/`&lt` always need a Normal keystroke to act as the tap —
+so a Normal on/off would be meaningless. Normal is always set (None is a *value*,
+not an "off" state).
+
+### 2b. The modifier / layer asymmetry (real, and principled)
+
+A lone **modifier** and a lone **layer** are both "hold to use, tap does nothing",
+yet they land in *different* slots:
+
+- A modifier is a **HID keycode**, so a lone modifier is just a key → **Normal**
+  (`&kp LSHIFT`). There is no separate "momentary modifier" behavior — `&kp <mod>`
+  *is* the held modifier (active immediately on press, no tapping-term) — so a
+  modifier alone never goes in Hold mode. Hold mode's Modifier is purely the hold
+  half of a Mod-Tap (it needs a Normal key).
+- A layer is **not a keycode**. Its "while held" form is a distinct behavior
+  (`&mo`), so a lone momentary layer lives in **Hold mode** (Normal = None).
+
+So the slot a *layer* sits in changes what it does:
+
+| Layer placement | Time character                      | Behavior                                  |
+| --------------- | ----------------------------------- | ----------------------------------------- |
+| Hold mode       | momentary (only while held)         | `&mo` (alone) / `&lt` (with a Normal key) |
+| Normal          | persistent (tap to switch, latches) | `&to` / `&tog` / `&sl` (a sub-mode pick)  |
+
+Modifiers have no such momentary-vs-persistent split (only `&kp <mod>`), so a lone
+modifier has exactly one home (Normal). This asymmetry is a direct consequence of
+"modifiers are keycodes, layers are not" — not an inconsistency.
+
+> Aside (Windows Sticky Keys): a `&kp LSHIFT` emits a real Shift press on every
+> tap, exactly like a physical Shift, so 5 quick taps trigger Windows Sticky Keys.
+> A home-row mod (`&mt LSHIFT A`) emits the *tap* key (A) on tap and Shift only on
+> hold, so rapid taps send A, not Shift. There is no standard ZMK behavior that
+> sends Shift only on long-hold; that would need a custom hold-tap, which we do not
+> surface.
 
 ---
 
@@ -186,19 +234,41 @@ are identified **by `displayName` string match** (`STANDARD_BEHAVIOR_GROUPS`,
   pre-fills the slots correctly and editing slots produces a binding. These are
   unit-testable in isolation (the repo already runs Vitest), which is the safest
   place to pin the table in §2.
-- **Modifier detection must decode ZMK's implicit-modifier encoding, not just
-  match eight base usages.** A held value is "a modifier" not only when it is one
-  of the eight base HID modifier usages (L/R Ctrl/Shift/Alt/GUI), but also when it
-  is any keycode carrying implicit modifier bits — ZMK packs modifiers into the
-  high bits of the usage value (`LC(...)`, `LS(LALT)`, `LC(LSHFT)`, …), so users
-  routinely put **multiple** modifiers on hold. Matching only the eight base
-  usages would make `bindingToSlots` drop those holds and break the round trip.
-  Detection (and the hold-slot composite picker, §3b) must understand the
-  implicit-modifier encoding so a multi-modifier hold survives binding → slots →
-  binding intact.
+- **The Hold-mode modifier picker must decode ZMK's implicit-modifier encoding.**
+  ZMK packs modifiers into the high byte of a usage value (`LC(...)`, `LS(LALT)`,
+  `LC(LSHFT)`, …), so a Mod-Tap hold routinely carries **multiple** modifiers. The
+  multi-select modifier picker converts between a held usage and the active
+  modifier set with `modifierSetFromUsage` / `usageFromModifierSet`
+  ([`slots.ts`](../../src/behaviors/slots.ts)), which strip/restore the high-byte
+  bits so a multi-modifier hold survives binding → slots → binding intact.
+  (Note: a *lone* modifier is **not** routed to Hold — per §2b it is a Normal
+  keystroke (`&kp <mod>`), so `bindingToSlots` decomposes `&kp` straight to the
+  Normal slot, no modifier-vs-key heuristic.)
 
 No firmware/RPC changes: the output is still a `BehaviorBinding`
 `{ behaviorId, param1, param2 }` handed to the existing `doUpdateBinding`.
+
+### 4a. Coverage — every standard ZMK behavior stays settable
+
+The slot model is **additive**: behaviors it does not own remain reachable through
+the existing metadata-driven parameter UI (chips today, tiles after Step 3), so no
+default key setting becomes un-settable. Verified against the 25 standard behaviors
+the repo knows (`behaviorAliases`, [`keymap-parser.ts`](../../src/keymap-parser.ts)):
+
+- **Slot model (Normal / Hold mode):** `&kp` (incl. a lone modifier, and implicit
+  mods via the "+ Send with" column), `&mt`, `&lt`, `&mo`, `&trans`, `&none`
+  (Step 2); `&to` / `&tog` / `&sl` as Normal-layer sub-modes (Step 4).
+- **Tiles / chips (single-action or 1-param), via `ParameterValuePicker`:** `&sk`,
+  `&kt`, `&caps_word`, `&key_repeat`, `&gresc`, `&mkp` / `&mmv` / `&msc`, `&bt`,
+  `&out`, `&ext_power`, `&bl`, `&rgb_ug`, `&bootloader`, `&reset`, `&soft_off`,
+  `&studio_unlock` (Step 3). All their param kinds (`constant` / `range` /
+  `hidUsage` / `layerId` / `nil`) are already handled.
+- **Intentionally not offered:** `&mt <non-modifier> <key>` (a held plain key just
+  auto-repeats — a footgun) and custom/extension hold-taps (not a ZMK default;
+  reachable via chips, §3b). 
+
+During the transition (Steps 2–4) the not-yet-migrated behaviors live in the
+residual chip area, so coverage is 100% at every step.
 
 ---
 
@@ -255,31 +325,31 @@ end state. Each step is its own PR.
 
 ### Step 2 — derive `&kp` / `&mt` / `&lt` / `&mo` from the slots (the core)
 
-- **Goal:** implement `deriveBinding` / `bindingToSlots` (§4) and let the user
-  fill Hold / Tap slots instead of naming a behavior, for the four core
-  behaviors. The Hold/Tap tabs in
-  [`BehaviorParametersPicker.tsx`](../../src/behaviors/BehaviorParametersPicker.tsx)
-  become the *primary* surface; the derived name is shown, not chosen.
-- **Risk:** medium — two distinct hazards:
-  - *Round-trip fidelity.* The **binding** survives binding → slots → binding, but
-    the **slot decomposition is heuristic**: which slot `&kp LSHIFT` lands in is
-    inferred from the keycode's type (a lone modifier → hold, a regular key → tap),
-    not stored anywhere. Describe Step 2 as "binding-lossless," not "slot-lossless."
-    Vitest should assert both the round trip *and* that `deriveBinding`'s output
-    passes the existing `validateBinding` (call site
-    [`BehaviorBindingPicker.tsx`](../../src/behaviors/BehaviorBindingPicker.tsx)
-    lines 227-234) so derived bindings can never be rejected by the firmware path.
-  - *Dual-edit state sync (the migration hazard).* Because the old chip row stays
-    until Step 5, the same binding becomes editable two ways — by chip and by slot.
-    On top of the existing `binding` prop and local `behaviorId/param1/param2` state
-    (lines 210-247), slot state is a third source of truth, and the chip↔slot
-    interaction (clicking the "Mod-Tap" chip vs. filling the hold slot) must stay
-    consistent. To contain this, **hide the chips for the derivation-target
-    behaviors** (`&kp`/`&mt`/`&lt`/`&mo`) as soon as the slot surface owns them,
-    rather than leaving both live and three-way-syncing.
-- **Done when:** filling/clearing the Hold and Tap slots produces the correct one
-  of `&kp` / `&mt` / `&lt` / `&mo` / `&none`, opening an existing such key shows the
-  right slot contents, and the derived binding validates.
+- **Goal:** the **Normal / Hold mode** surface (§2) replaces naming-then-params for
+  the core behaviors, in a new [`SlotBindingPicker.tsx`](../../src/behaviors/SlotBindingPicker.tsx)
+  rendered above the residual chips in `BehaviorBindingPicker`. **Normal** is an
+  always-shown key grid (with `clearTiles` for None / Transparent and the
+  collapsible "+ Send with" implicit-mod column); **Hold mode** is an *on/off*
+  checkbox that reveals a `Modifier | Layer` picker (multi-select modifiers; layer
+  radios). The derived behavior name is shown, not chosen.
+- **Pure model** ([`slots.ts`](../../src/behaviors/slots.ts), unit-tested in
+  [`slots.test.ts`](../../src/behaviors/slots.test.ts)): a capability-aware
+  `DerivationRegistry` (resolved by `displayName`), `deriveBinding(slots) →
+  BehaviorBinding | null`, `bindingToSlots(binding) → slots | null`, and the
+  `modifierSetFromUsage` / `usageFromModifierSet` helpers (§4). `validateBinding`
+  moved to [`parameters.ts`](../../src/behaviors/parameters.ts) so the tests assert
+  every derived binding also passes the firmware-facing check.
+- **Round-trip fidelity:** the binding is **binding-lossless** (each core behavior
+  stores hold/tap explicitly; `&kp`'s param always decomposes to Normal, so there
+  is no modifier-vs-key heuristic). Vitest asserts the round trip *and*
+  `validateBinding`.
+- **Dual-edit containment:** the slot surface and the residual chips both edit the
+  same local `behaviorId/param1/param2` state — one source of truth, no extra slot
+  state — and the derivation-target chips (`&kp`/`&mt`/`&lt`/`&mo`, plus
+  None/Transparent) are hidden so a behavior is never editable two ways at once.
+- **Done when:** setting Normal and toggling Hold mode produces the correct one of
+  `&kp` / `&mt` / `&lt` / `&mo` / `&none`, opening such a key shows the right slot
+  state (a `&mo` reads as Hold-only at a glance), and the derived binding validates.
 
 ### Step 3 — tile-ify the single-action behaviors
 
@@ -291,12 +361,17 @@ end state. Each step is its own PR.
   [`HidUsagePicker.tsx`](../../src/behaviors/HidUsagePicker.tsx). Capability-aware:
   a tab/tile renders only for behaviors the firmware exposes.
 
-### Step 4 — reverse-lookup label + layer sub-mode picker
+### Step 4 — layer in the Normal slot (To / Toggle / Sticky) + custom hold-tap
 
-- **Goal:** add the unobtrusive "current combination = X" label to the slot
-  surface, plus the layer sub-mode picker (`&to` / `&tog` / `&sl`) and the
-  custom-hold-tap identity choice (§3b).
-- **Risk:** low-medium — additive labels and a small selector.
+- **Goal:** let the **Normal** slot hold a *layer* (not just a key), which derives
+  the persistent layer switches — `&to` / `&tog` / `&sl` — with a small sub-mode
+  pick (they take one layer param and differ only in latch behavior, §2b). Add the
+  custom-hold-tap identity choice for when more than one hold-tap behavior exists
+  (§3b, default `&mt`). The reverse-lookup label already ships with Step 2.
+- **Note:** this is the *persistent* layer case; the *momentary* layer (`&mo`) and
+  Layer-Tap (`&lt`) live in **Hold mode** and already land in Step 2. A layer in
+  Normal disables Hold mode (a tap-to-switch has no hold half).
+- **Risk:** low-medium — additive sub-mode selector on the Normal slot.
 
 ### Step 5+ — remove the top-level behavior tabs (later, needs its own design)
 
@@ -342,13 +417,32 @@ stays here and is not pushed upstream.
    do we accept the `displayName` string match and degrade gracefully when names
    differ? (Current direction: keep the string match + graceful "not present.")
 2. **Multiple hold-tap behaviors.** When `homerow_mods` and `&mt` both exist, what
-   is the default for a "key + mod" slot fill, and how prominent should the
-   sub-mode switch be?
-3. **The "hold a modifier, empty tap" case.** Deriving `&kp <mod>` from an empty
-   tap + a held modifier is elegant but slightly surprising; does the reverse-
-   lookup label make it clear enough, or should that case stay an explicit tile?
+   is the default for a Normal-key + Hold-modifier fill, and how prominent should
+   the sub-mode switch be? (Deferred to Step 4.)
+3. ~~**The "hold a modifier, empty tap" case.**~~ **Resolved (§2b):** a lone
+   modifier is a HID keycode, so it is a **Normal** keystroke (`&kp <mod>`), not a
+   Hold. Hold mode's Modifier is only the hold half of a Mod-Tap. There is no
+   "momentary modifier" behavior to surprise anyone with.
 4. **Step 5 scope.** How much of the old tab hierarchy, if any, should survive as
    an "advanced" escape hatch for behaviors that don't fit either shape?
+
+### 8a. Before-main blockers (from the PR #29 review)
+
+These are acceptable on the integration branch but **must be resolved before the
+integration branch merges to `main`**:
+
+- **Non-core bindings still render the slot surface.** Selecting a non-core
+  behavior (Sticky Key, Caps Word, …) shows the slot surface above with
+  *"Slots = No matching behavior"* and an empty Normal grid; clicking a key in
+  that empty grid silently overwrites the binding to `&kp`. The slot surface must
+  stay reachable (it is the only way to switch *into* a core behavior, since the
+  core chips are hidden), but for a non-core current binding it should collapse /
+  disable the grid, label the actual current behavior, or warn before overwriting.
+  Step 3-4 (tiling the non-core behaviors) largely dissolves this, so it may
+  resolve naturally — but confirm before `main`.
+- **Minor (acceptable for now):** `deriveBinding → null` makes `writeSlots` a
+  no-op (silent) when the firmware doesn't expose the derived behavior; tie this
+  to the reverse-lookup "no matching behavior" state rather than doing nothing.
 
 ---
 
@@ -379,7 +473,10 @@ since they're rarely used day-to-day.
 > モデル・エッジケース）と段階別の実装計画を足したもの。issue が対外的な要約、
 > こちらが作業用の設計。英語が正、本節はそのミラー。
 >
-> ステータス: **設計のみ・実装はまだ。** コードを書く前にここで方向性をレビュー可能に。
+> ステータス: **Step 1 出荷済み（PR #27）／ Step 2 実装中。** スロットモデルは
+> **Normal / Hold mode** 方式に収束（§2）。初期案の「Tap / Hold」は、ただの `&kp`
+> に対して「Tap＝短押し」が誤解を招くため改名した。全標準 ZMK behavior の設定可否は
+> §4a で確認済み。
 
 ## 1. 現状コードに即した問題
 
@@ -417,24 +514,68 @@ GetBehaviorDetailsResponse>`（36 行）で、呼び出し側 588 行の `Object
 
 ## 2. 核心: behavior は最初の入力ではなく結果
 
-人の頭にあるのは「タップに何、ホールドに何」であって `&mt` という名前ではない。
-タイピング＋レイヤー＋ホールドタップの中核（実キーマップの約 9 割）では、どの枠を
-埋めたかから behavior が機械的に決まる:
+人の頭にあるのは「このキーは何をする／長押しで別のことをするか」であって `&mt`
+という名前ではない。中核（実キーマップの約 9 割）では 2 つのスロットから behavior が
+機械的に決まる:
 
-| タップ枠   | ホールド枠 | 派生 behavior     | ファーム                        |
-| ---------- | ---------- | ----------------- | ------------------------------- |
-| キー       | （空）     | Key Press         | `&kp <key>`                     |
-| キー       | 修飾       | Mod-Tap           | `&mt <mod> <key>`               |
-| キー       | レイヤー   | Layer-Tap         | `&lt <layer> <key>`             |
-| （空/None）| レイヤー   | Momentary Layer   | `&mo <layer>`                   |
-| （空）     | 修飾       | ただの修飾キー    | `&kp <mod>`（例 `&kp LSHIFT`）  |
-| （空）     | （空）     | None              | `&none`                         |
+- **Normal** … 普通に押したときの動作。キーストローク（`LSHIFT` 等の単独修飾も含む）、
+  レイヤー切替、または無し（None / Transparent）。**常に存在**（None も“値”）。
+- **Hold mode** … 長押ししたときの**“別の”動作（任意）**。修飾（→ Mod-Tap）か
+  レイヤー（→ Layer-Tap / Momentary Layer）。既定オフ。
 
-この範囲では **behavior セレクタは不要**——2 枠を埋めれば名前は決まる。やることは
-順序の反転:「behavior を選んでから Hold/Tap を埋める」→「**Hold/Tap を埋めれば
-behavior が派生する**」。`&kp` が 2 行ある点に注意（タップにキー＝`&kp <key>`、
-ホールドに修飾だけ＝`&kp <mod>`）。Mod-Tap は**両枠**が埋まったときだけ現れる。
-逆引きラベル（§3b）がこの可読性を担保する。
+| Normal            | Hold mode | 派生 behavior        | ファーム               |
+| ----------------- | --------- | -------------------- | ---------------------- |
+| キー              | （オフ）  | Key Press            | `&kp <key>`            |
+| 修飾（キーとして）| （オフ）  | Key Press            | `&kp <mod>`            |
+| キー              | 修飾      | Mod-Tap              | `&mt <mod> <key>`      |
+| キー              | レイヤー  | Layer-Tap            | `&lt <layer> <key>`    |
+| None              | レイヤー  | Momentary Layer      | `&mo <layer>`          |
+| レイヤー(サブモード)| （オフ）| To / Toggle / Sticky | `&to` / `&tog` / `&sl` |
+| Transparent       | （オフ）  | Transparent          | `&trans`               |
+| None              | （オフ）  | None                 | `&none`                |
+
+順序の反転:「behavior を選んでから param」→「**Normal（と任意で Hold mode）を埋めれば
+behavior が派生する**」。
+
+### 2a. なぜ「Tap / Hold」でなく「Normal / Hold mode」か
+
+「Tap」は**短押し**を意味するが、ただの `&kp A` は短押し専用ではない（押している間
+ずっと A、長押しはリピート）。そのスロットを「Tap」と呼ぶと長押し分が見えなくなる。
+だから基本スロットは **Normal**（押したときの動作・押す長さに依らない）。タップ/
+ホールドの**区別**は hold-tap のときだけ生まれ、**派生名**（Mod-Tap, Layer-Tap）に
+現れる。on/off があるのは **Hold mode だけ**——「Normal オフ＋Hold オン」に当たる
+behavior が無い（`&mt`/`&lt` は必ず Normal のキーをタップ側に要る）ため。
+
+### 2b. 修飾／レイヤーの非対称（実在し、筋が通る）
+
+単独の**修飾**も単独の**レイヤー**も「長押しで使う・タップは無反応」だが、入る
+スロットが違う:
+
+- 修飾は **HID キーコード**なので単独ならただのキー → **Normal**（`&kp LSHIFT`）。
+  「モメンタリ修飾」という別 behavior は無い（`&kp <mod>` がそれ・押した瞬間に即時
+  有効）ので、単独修飾は Hold mode に入らない。Hold mode の修飾は Mod-Tap の長押し側
+  専用（Normal にキーが要る）。
+- レイヤーは**キーコードではない**。「押している間」の形が別 behavior（`&mo`）なので、
+  単独のモメンタリは **Hold mode**（Normal = None）。
+
+ゆえにレイヤーは**置くスロットで意味が変わる**:
+
+| レイヤーの場所 | 時間的性質 | behavior |
+| --- | --- | --- |
+| Hold mode | モメンタリ（押している間だけ） | `&mo`（単独）/ `&lt`（Normal キー付き） |
+| Normal | 持続（タップで切替・残る） | `&to` / `&tog` / `&sl`（サブモード選択） |
+
+修飾にはこの「一時 vs 持続」が無い（`&kp <mod>` のみ）ので、単独修飾の居場所は
+Normal 一択。この非対称は「**修飾はキーコード、レイヤーはそうでない**」の直接の帰結で、
+矛盾ではない。
+
+> 補足（Windows 固定キー）: `&kp LSHIFT` はタップごとに本物の Shift 押下を送る（物理
+> Shift と同じ）ので、5 回連打で固定キーが発動する。ホームロウ Mod（`&mt LSHIFT A`）
+> はタップで A を送り Shift は長押し時だけなので、連打しても A が出る。長押し時だけ
+> Shift を送る標準 behavior は無く、それには自作 hold-tap が要る（出さない）。
+
+> 注: 以下 §3〜§8 は旧「Tap / Hold」表記が残る箇所がある（= 新「Normal / Hold mode」）。
+> カバレッジ確認（§4a）と段階計画の最新は**英語版が正**。要点は上の §2/§2a/§2b に集約。
 
 ## 3. 操作形
 
