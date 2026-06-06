@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  GetBehaviorDetailsResponse,
-  BehaviorBindingParametersSet,
-} from "@zmkfirmware/zmk-studio-ts-client/behaviors";
+import { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
 import { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import { BehaviorParametersPicker } from "./BehaviorParametersPicker";
-import { validateValue } from "./parameters";
+import { validateBinding } from "./parameters";
 
 export interface BehaviorBindingPickerProps {
   binding: BehaviorBinding;
@@ -87,30 +84,6 @@ function classifyBehavior(b: GetBehaviorDetailsResponse): BehaviorClass {
     return { tier: "extension", group: "Hold-Tap" };
   }
   return { tier: "extension", group: "Other" };
-}
-
-function validateBinding(
-  metadata: BehaviorBindingParametersSet[],
-  layerIds: number[],
-  param1?: number,
-  param2?: number
-): boolean {
-  if (
-    (param1 === undefined || param1 === 0) &&
-    metadata.every((s) => !s.param1 || s.param1.length === 0)
-  ) {
-    return true;
-  }
-
-  const matchingSet = metadata.find((s) =>
-    validateValue(layerIds, param1, s.param1)
-  );
-
-  if (!matchingSet) {
-    return false;
-  }
-
-  return validateValue(layerIds, param2, matchingSet.param2);
 }
 
 export const BehaviorBindingPicker = ({
