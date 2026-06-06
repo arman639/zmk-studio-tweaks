@@ -124,17 +124,17 @@ export const Keymap = ({
       rx: (k.rx || 0) / 100.0,
       ry: (k.ry || 0) / 100.0,
       children: (
-        <div className="@container flex flex-col items-center justify-center leading-tight w-full gap-px">
+        <div className="@container flex flex-col items-center justify-center leading-tight w-full gap-1">
           {p1 && p2 ? (
             // Hold-tap style: hold above (faded, always small), tap below
             // (bold, sized per type) — the tap fires on a normal press so
             // it gets the prominent slot.
             <>
-              <div className="text-xs truncate max-w-full opacity-60">
+              <div className="text-xs leading-none flex items-center justify-center max-w-full font-bold">
                 {p1.node}
               </div>
               <div
-                className={`${sizeClassFor(p2.kind)} truncate max-w-full font-bold`}
+                className={`${sizeClassFor(p2.kind)} leading-none flex items-center justify-center max-w-full font-bold`}
               >
                 {p2.node}
               </div>

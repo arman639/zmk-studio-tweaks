@@ -38,17 +38,53 @@ export const HidUsageLabel = ({ hid_usage, compact }: HidUsageLabelProps) => {
   const mods = (pageWithMods >> 8) & 0xff;
   const page = pageWithMods & 0xff;
   const shiftActive = (mods & (0x02 | 0x20)) !== 0;
+  const otherMods = mods & ~(0x02 | 0x20) & 0xff;
 
   const labels = hid_usage_get_metadata(page, id, layout);
 
+  // Implicit "+ Send with" modifiers shown as small bordered badges to the left
+  // of the cap glyph (L/R collapsed), stacked vertically when there are several
+  // — e.g. `LC(S)` reads "[Ctrl] S". Capped at three.
+  const modBadges = (m: number) =>
+    [
+      m & 0x11 ? "Ctrl" : "",
+      m & 0x22 ? "Shift" : "",
+      m & 0x44 ? "Alt" : "",
+      m & 0x88 ? "GUI" : "",
+    ].filter(Boolean);
+  // EXPERIMENT: badges at text-xs (same class as the hold preview, 6.4px).
+  const withMods = (badges: string[], key: string) =>
+    badges.length === 0 ? (
+      <span>{key}</span>
+    ) : (
+      <span className="inline-flex flex-row items-center gap-px leading-none">
+        <span className="inline-flex flex-col gap-0">
+          {badges.slice(0, 3).map((b) => (
+            <span
+              key={b}
+              className="text-xs leading-none rounded-sm border border-base-content/40 px-[0.15em] whitespace-nowrap"
+            >
+              {b}
+            </span>
+          ))}
+        </span>
+        <span>{key}</span>
+      </span>
+    );
+
   // Short labels like "1 !" / "- _" / "[ {" are unshifted+shifted pairs.
   // When an implicit Shift is applied the binding always types the shifted
-  // glyph, so show just that. Otherwise render them stacked like a
-  // physical keycap — unless compact is requested.
+  // glyph, so show just that (other modifiers ride beside it). Otherwise render
+  // the pair stacked like a physical keycap — unless compact is requested.
   const short = labels.short || "";
   const pair = short.match(/^(\S{1,2}) (\S{1,2})$/);
   if (pair && shiftActive) {
-    return <span>{pair[2]}</span>;
+    return withMods(modBadges(otherMods), pair[2]);
+  }
+  // Any other implicit modifier: badges beside the cap glyph (here Shift is not
+  // a shifted glyph, so it joins the badges).
+  if (mods) {
+    return withMods(modBadges(mods), pair ? pair[1] : short);
   }
   if (pair && !compact) {
     return (

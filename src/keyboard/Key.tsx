@@ -59,18 +59,18 @@ export const Key = ({
     >
       {shortHeader && (
         <div
-          className={`absolute top-0.5 left-1/2 -translate-x-1/2 text-xs leading-none px-1.5 py-0.5 rounded-md border text-nowrap truncate max-w-[90%] ${
+          className={`absolute top-0.5 left-1/2 -translate-x-1/2 text-xs leading-none font-bold px-1 py-0 rounded-md border text-nowrap truncate max-w-[96%] ${
             selected
               ? "border-primary-content/50 bg-primary-content/15 text-primary-content"
-              : "border-base-content/30 bg-base-content/10 text-base-content/80"
+              : "border-base-content/30 bg-base-content/10 text-base-content"
           }`}
         >
           {shortHeader}
         </div>
       )}
       <div
-        className={`absolute inset-0 flex items-center justify-center ${
-          shortHeader ? "pt-3.5" : ""
+        className={`absolute inset-0 flex justify-center ${
+          shortHeader ? "items-start pt-3" : "items-center"
         }`}
       >
         {children}

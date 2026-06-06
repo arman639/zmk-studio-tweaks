@@ -59,8 +59,17 @@ const chipClass = (active: boolean) =>
 
 function tapLabel(slot: Slots["tap"]): string {
   if (slot.kind === "empty") return "—";
-  const [page, id] = hid_usage_page_and_id_from_usage(slot.usage);
-  return hid_usage_get_label(page, id) ?? `0x${slot.usage.toString(16)}`;
+  // Strip the implicit-modifier high byte before resolving the label, then show
+  // those "+ Send with" modifiers as a prefix (e.g. `LC(S)` → "L Ctrl + S").
+  // Without the strip, the modified value mis-reads its page and falls back to a
+  // raw `0x…`.
+  const base = slot.usage & 0x00ffffff;
+  const [page, id] = hid_usage_page_and_id_from_usage(base);
+  const key = hid_usage_get_label(page, id) ?? `0x${base.toString(16)}`;
+  const mods = HOLD_MODIFIERS.filter(
+    (m) => ((slot.usage >>> 24) & m.bit) !== 0
+  ).map((m) => m.label);
+  return mods.length ? `${mods.join(" + ")} + ${key}` : key;
 }
 
 export const SlotBindingPicker = ({
@@ -270,7 +279,6 @@ export const SlotBindingPicker = ({
             clearTiles={clearTiles}
             modifiers={{
               side: "right",
-              collapsible: true,
               label: "+ Send with",
               hint: "Sent together with the key, e.g. Ctrl+C.",
             }}
