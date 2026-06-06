@@ -6,7 +6,8 @@ import {
   bindingToSlots,
   buildDerivationRegistry,
   deriveBinding,
-  isModifierUsage,
+  modifierSetFromUsage,
+  usageFromModifierSet,
   type Slots,
 } from "./slots";
 import { validateBinding } from "./parameters";
@@ -62,30 +63,30 @@ describe("buildDerivationRegistry", () => {
   });
 });
 
-describe("isModifierUsage", () => {
-  it("recognises the eight base HID modifier usages", () => {
-    for (let id = 0xe0; id <= 0xe7; id++) {
-      expect(isModifierUsage(hid(id)), `usage 0x${id.toString(16)}`).toBe(true);
+describe("modifier set <-> usage (implicit-modifier encoding)", () => {
+  it("decodes a single base modifier", () => {
+    expect(modifierSetFromUsage(LCTRL)).toBe(0x01);
+    expect(modifierSetFromUsage(LSHIFT)).toBe(0x02);
+  });
+
+  it("decodes a multi-modifier hold (base usage + implicit bits)", () => {
+    // LC(LSHFT) = Ctrl+Shift: the LC bit is in the high byte, the Shift base in
+    // the low bits — both must be picked up so the hold round-trips (design §4).
+    expect(modifierSetFromUsage(LC(LSHIFT))).toBe(0x01 | 0x02);
+    expect(modifierSetFromUsage(LS(LCTRL))).toBe(0x01 | 0x02);
+  });
+
+  it("encodes the empty set as no modifier", () => {
+    expect(usageFromModifierSet(0)).toBe(0);
+  });
+
+  it("round-trips every modifier subset through usage and back", () => {
+    for (let bits = 0; bits <= 0xff; bits++) {
+      expect(
+        modifierSetFromUsage(usageFromModifierSet(bits)),
+        `bits 0x${bits.toString(16)}`
+      ).toBe(bits);
     }
-  });
-
-  it("recognises a multi-modifier hold whose base is a modifier", () => {
-    // LC(LSHFT) = hold Ctrl+Shift. The LC bit lives in the high byte; matching
-    // the raw value against the eight usages would miss it (design note §4).
-    expect(isModifierUsage(LC(LSHIFT))).toBe(true);
-    expect(isModifierUsage(LS(LCTRL))).toBe(true);
-  });
-
-  it("treats a shifted key as a key, not a modifier", () => {
-    // LS(N1) = "!" — carries a mod bit but its base (N1) is a regular key, so it
-    // belongs in the Tap slot.
-    expect(isModifierUsage(LS(KEY_N1))).toBe(false);
-    expect(isModifierUsage(KEY_A)).toBe(false);
-  });
-
-  it("does not treat layer ids / small immediates as modifiers", () => {
-    expect(isModifierUsage(0)).toBe(false);
-    expect(isModifierUsage(FN_LAYER)).toBe(false);
   });
 });
 
@@ -152,9 +153,11 @@ describe("deriveBinding — the §2 table", () => {
 });
 
 describe("bindingToSlots", () => {
-  it("reads a lone-modifier &kp into the Hold slot", () => {
+  it("reads a lone-modifier &kp into the Tap slot (it's just a key)", () => {
+    // &kp LSHIFT is a normal Shift key, not the hold half of a Mod-Tap, so it
+    // lands in Tap — the Hold modifier mode is reserved for Mod-Tap.
     expect(bindingToSlots({ behaviorId: KP, param1: LSHIFT, param2: 0 }, reg)).toEqual(
-      { tap: { kind: "empty" }, hold: { kind: "mod", usage: LSHIFT } }
+      { tap: { kind: "key", usage: LSHIFT }, hold: { kind: "empty" } }
     );
   });
 
@@ -173,7 +176,7 @@ describe("bindingToSlots", () => {
 describe("round trip — binding-lossless for every core behavior", () => {
   const bindings: [name: string, binding: BehaviorBinding][] = [
     ["&kp A", { behaviorId: KP, param1: KEY_A, param2: 0 }],
-    ["&kp LSHIFT (held modifier)", { behaviorId: KP, param1: LSHIFT, param2: 0 }],
+    ["&kp LSHIFT (lone modifier is a Tap key)", { behaviorId: KP, param1: LSHIFT, param2: 0 }],
     ["&kp LS(N1) (shifted key stays a key)", { behaviorId: KP, param1: LS(KEY_N1), param2: 0 }],
     ["&mt LSHIFT ENTER", { behaviorId: MT, param1: LSHIFT, param2: KEY_ENTER }],
     ["&mt LC(LSHFT) A (multi-modifier hold)", { behaviorId: MT, param1: LC(LSHIFT), param2: KEY_A }],

@@ -114,28 +114,26 @@ describe("persistent clear tiles (key-picker rethink, step 1)", () => {
     ).toBeInTheDocument();
   });
 
-  it("returns a None'd key to Key Press in one grid click", async () => {
+  it("clears a key to None and back to Key Press from the Normal grid", async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     await connectDemo(user);
     await changeQtoNone(user);
 
-    // The None tile now reports itself as active.
-    expect(
-      await screen.findByRole("button", { name: "None", pressed: true })
-    ).toBeInTheDocument();
+    // Q is now None: Hold mode is off and the Normal slot is empty. The Normal
+    // grid stays shown (it's always present — None is a value, the in-grid tile),
+    // so promoting back is one grid click.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: "Hold mode" })
+      ).not.toBeChecked()
+    );
 
-    // With Q set to None its keymap tile no longer reads "Q", so the only
-    // remaining "Q" button is the live keycode grid's tile. Clicking it must
-    // promote the binding straight back to Key Press (no tab round trip).
+    // Clicking a key in the always-shown Normal grid derives Key Press.
     const gridQ = await screen.findAllByRole("button", { name: /\bQ\b/ });
     await user.click(gridQ[gridQ.length - 1]);
 
     await waitFor(() =>
-      expect(
-        screen
-          .getAllByRole("radio", { name: "Key Press" })
-          .some((r) => r.getAttribute("aria-checked") === "true")
-      ).toBe(true)
+      expect(screen.getByText("Key Press")).toBeInTheDocument()
     );
   });
 });

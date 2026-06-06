@@ -21,7 +21,10 @@
 import type { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
 import type { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 
-import { hid_usage_page_and_id_from_usage } from "../hid-usages";
+import {
+  hid_usage_from_page_and_id,
+  hid_usage_page_and_id_from_usage,
+} from "../hid-usages";
 
 // =============================================================================
 // Slot types
@@ -63,6 +66,9 @@ const CORE_DISPLAY_NAMES: Record<CoreBehavior, string> = {
   none: "None",
 };
 
+/** User-facing names for the reverse-lookup label on the slot surface. */
+export const CORE_LABELS: Record<CoreBehavior, string> = CORE_DISPLAY_NAMES;
+
 /**
  * A bidirectional map between core behaviors and the runtime behaviorIds the
  * connected keyboard exposes. Built from the `behaviors` array the picker
@@ -99,26 +105,63 @@ const HID_KEYBOARD_PAGE = 7;
 const FIRST_MODIFIER_USAGE = 0xe0; // 224, Left Control
 const LAST_MODIFIER_USAGE = 0xe7; // 231, Right GUI
 
+// The eight base HID modifiers, in implicit-bit order (bit i ↔ usage 0xE0+i),
+// matching the LC/LS/.../RG flag order in keymap-parser. The Hold-slot modifier
+// picker offers these as a multi-select: a held value combines one base usage
+// (the lowest selected modifier) with implicit-modifier bits for the rest, e.g.
+// Ctrl+Shift = LS(LCTRL) = base LCTRL + the LS bit.
+export interface ModifierInfo {
+  bit: number;
+  usage: number;
+  label: string;
+}
+
+export const HOLD_MODIFIERS: ReadonlyArray<ModifierInfo> = [
+  { bit: 0x01, label: "L Ctrl" },
+  { bit: 0x02, label: "L Shift" },
+  { bit: 0x04, label: "L Alt" },
+  { bit: 0x08, label: "L GUI" },
+  { bit: 0x10, label: "R Ctrl" },
+  { bit: 0x20, label: "R Shift" },
+  { bit: 0x40, label: "R Alt" },
+  { bit: 0x80, label: "R GUI" },
+].map((m, i) => ({
+  ...m,
+  usage: hid_usage_from_page_and_id(HID_KEYBOARD_PAGE, FIRST_MODIFIER_USAGE + i),
+}));
+
 /**
- * Whether a held HID usage reads as "a modifier" (so it lands in the Hold slot).
- *
- * ZMK packs implicit modifiers into the high byte of a usage value and keeps the
- * base HID usage in the low 24 bits. A value is a modifier when its *base* usage
- * — after stripping the implicit-mod bits — is one of the eight base HID
- * modifier usages (page 7, ids 0xE0..0xE7). Stripping first is essential: a
- * multi-modifier hold like `LC(LSHFT)` carries the LC bit in the high byte, so
- * matching the eight usages against the raw value would miss it and break the
- * binding → slots → binding round trip (design note §4). A shifted *key* such as
- * `LS(N1)` ("!") keeps a non-modifier base (N1) and is therefore a key, not a
- * modifier — it belongs in the Tap slot.
+ * Decode a held HID usage into the set of active modifiers, as a bitmask over
+ * {@link HOLD_MODIFIERS} bits. Combines the implicit-modifier bits in the high
+ * byte with the base usage (when the base is itself a modifier). Returns 0 for a
+ * value that carries no modifiers.
  */
-export function isModifierUsage(usage: number): boolean {
+export function modifierSetFromUsage(usage: number): number {
+  let bits = (usage >>> 24) & 0xff;
   const base = usage & 0x00ffffff;
   const [page, id] = hid_usage_page_and_id_from_usage(base);
+  if (page === HID_KEYBOARD_PAGE && id >= FIRST_MODIFIER_USAGE && id <= LAST_MODIFIER_USAGE) {
+    bits |= 1 << (id - FIRST_MODIFIER_USAGE);
+  }
+  return bits;
+}
+
+/**
+ * Encode a modifier-bit set back into a single held HID usage: the lowest
+ * selected modifier becomes the base usage, the rest ride along as implicit
+ * bits (so Ctrl+Shift → `LS(LCTRL)`). Returns 0 for the empty set. Inverse of
+ * {@link modifierSetFromUsage} up to modifier identity (the exact base/implicit
+ * split is canonicalized, but the set of modifiers round-trips).
+ */
+export function usageFromModifierSet(bits: number): number {
+  const masked = bits & 0xff;
+  if (masked === 0) return 0;
+  const lowest = masked & -masked;
+  const index = Math.log2(lowest);
+  const implicit = masked & ~lowest;
   return (
-    page === HID_KEYBOARD_PAGE &&
-    id >= FIRST_MODIFIER_USAGE &&
-    id <= LAST_MODIFIER_USAGE
+    hid_usage_from_page_and_id(HID_KEYBOARD_PAGE, FIRST_MODIFIER_USAGE + index) |
+    (implicit << 24)
   );
 }
 
@@ -178,10 +221,11 @@ export function deriveBinding(
  * chip UI.
  *
  * The **binding** survives binding → slots → binding for every core behavior
- * ("binding-lossless"). The slot *decomposition* is heuristic only for `&kp`,
- * whose single param is read as a Hold (a lone modifier) or a Tap (any other
- * key) from the keycode's type — but both readings derive back to `&kp` with the
- * same param, so the binding never changes ("slot-lossless" is *not* claimed).
+ * ("binding-lossless"): each core behavior stores its hold/tap explicitly, so
+ * the decomposition is a direct read, not a heuristic. A lone modifier `&kp`
+ * (e.g. `&kp LSHIFT`) decomposes to the Tap slot — it's a normal key, not a
+ * hold — so the Hold slot's modifier mode is only ever the hold half of a
+ * Mod-Tap.
  */
 export function bindingToSlots(
   binding: BehaviorBinding,
@@ -192,9 +236,14 @@ export function bindingToSlots(
 
   switch (core) {
     case "kp":
-      return isModifierUsage(binding.param1)
-        ? { tap: { kind: "empty" }, hold: { kind: "mod", usage: binding.param1 } }
-        : { tap: { kind: "key", usage: binding.param1 }, hold: { kind: "empty" } };
+      // A `&kp` is a single keycode the user pressed — including a lone modifier
+      // (`&kp LSHIFT` is just a normal Shift key), which is a *key*, not the hold
+      // half of a Mod-Tap. So its param always lands in the Tap slot; the Hold
+      // slot's modifier mode is reserved for Mod-Tap, where a tap is also present.
+      return {
+        tap: { kind: "key", usage: binding.param1 },
+        hold: { kind: "empty" },
+      };
     case "mt":
       return {
         tap: { kind: "key", usage: binding.param2 },
