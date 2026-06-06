@@ -42,9 +42,10 @@ export const HidUsageLabel = ({ hid_usage, compact }: HidUsageLabelProps) => {
 
   const labels = hid_usage_get_metadata(page, id, layout);
 
-  // Implicit "+ Send with" modifiers shown as small bordered badges to the left
-  // of the cap glyph (L/R collapsed), stacked vertically when there are several
-  // — e.g. `LC(S)` reads "[Ctrl] S". Capped at three.
+  // Implicit "+ Send with" modifiers, shown as small bordered badges (text-xs,
+  // matching the hold preview) to the left of the cap glyph, L/R collapsed and
+  // stacked vertically — e.g. `LC(S)` reads "[Ctrl] S". There are at most four
+  // (Ctrl/Shift/Alt/GUI); all are shown so a "hyper"-style key isn't misread.
   const modBadges = (m: number) =>
     [
       m & 0x11 ? "Ctrl" : "",
@@ -52,14 +53,13 @@ export const HidUsageLabel = ({ hid_usage, compact }: HidUsageLabelProps) => {
       m & 0x44 ? "Alt" : "",
       m & 0x88 ? "GUI" : "",
     ].filter(Boolean);
-  // EXPERIMENT: badges at text-xs (same class as the hold preview, 6.4px).
   const withMods = (badges: string[], key: string) =>
     badges.length === 0 ? (
       <span>{key}</span>
     ) : (
       <span className="inline-flex flex-row items-center gap-px leading-none">
         <span className="inline-flex flex-col gap-0">
-          {badges.slice(0, 3).map((b) => (
+          {badges.map((b) => (
             <span
               key={b}
               className="text-xs leading-none rounded-sm border border-base-content/40 px-[0.15em] whitespace-nowrap"

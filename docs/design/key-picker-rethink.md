@@ -426,6 +426,24 @@ stays here and is not pushed upstream.
 4. **Step 5 scope.** How much of the old tab hierarchy, if any, should survive as
    an "advanced" escape hatch for behaviors that don't fit either shape?
 
+### 8a. Before-main blockers (from the PR #29 review)
+
+These are acceptable on the integration branch but **must be resolved before the
+integration branch merges to `main`**:
+
+- **Non-core bindings still render the slot surface.** Selecting a non-core
+  behavior (Sticky Key, Caps Word, …) shows the slot surface above with
+  *"Slots = No matching behavior"* and an empty Normal grid; clicking a key in
+  that empty grid silently overwrites the binding to `&kp`. The slot surface must
+  stay reachable (it is the only way to switch *into* a core behavior, since the
+  core chips are hidden), but for a non-core current binding it should collapse /
+  disable the grid, label the actual current behavior, or warn before overwriting.
+  Step 3-4 (tiling the non-core behaviors) largely dissolves this, so it may
+  resolve naturally — but confirm before `main`.
+- **Minor (acceptable for now):** `deriveBinding → null` makes `writeSlots` a
+  no-op (silent) when the firmware doesn't expose the derived behavior; tie this
+  to the reverse-lookup "no matching behavior" state rather than doing nothing.
+
 ---
 
 ## Appendix — what the "flavor" behaviors actually do

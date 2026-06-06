@@ -2,18 +2,20 @@
 //
 // The picker historically asks the user to name a behavior first, then fill its
 // parameters. The slot model inverts that for the typing + layer + hold-tap core
-// (~90% of real keymaps): the user fills a **Tap** slot and a **Hold** slot, and
-// the behavior is *derived* from which slots are filled. See
-// `docs/design/key-picker-rethink.md` §2-§4.
+// (~90% of real keymaps): the user sets a **Normal** action (always present) and
+// an optional **Hold mode** action, and the behavior is *derived*. The two slot
+// fields below are still named `tap` / `hold` (the firmware's tap/hold params);
+// the UI labels them Normal / Hold mode. See `docs/design/key-picker-rethink.md`
+// §2 (esp. §2b: a lone modifier is a Normal keystroke, not a Hold).
 //
-//   | Tap slot       | Hold slot | Derived behavior  | Firmware            |
-//   | -------------- | --------- | ----------------- | ------------------- |
-//   | key            | (empty)   | Key Press         | &kp <key>           |
-//   | key            | modifier  | Mod-Tap           | &mt <mod> <key>     |
-//   | key            | layer     | Layer-Tap         | &lt <layer> <key>   |
-//   | (empty / None) | layer     | Momentary Layer   | &mo <layer>         |
-//   | (empty)        | modifier  | a plain held mod  | &kp <mod>           |
-//   | (empty)        | (empty)   | None              | &none               |
+//   | Normal (tap)   | Hold mode (hold) | Derived behavior | Firmware            |
+//   | -------------- | ---------------- | ---------------- | ------------------- |
+//   | key            | (off)            | Key Press        | &kp <key>           |
+//   | modifier (key) | (off)            | Key Press        | &kp <mod>           |
+//   | key            | modifier         | Mod-Tap          | &mt <mod> <key>     |
+//   | key            | layer            | Layer-Tap        | &lt <layer> <key>   |
+//   | (none)         | layer            | Momentary Layer  | &mo <layer>         |
+//   | (none)         | (off)            | None             | &none               |
 //
 // The output is still a plain `BehaviorBinding` handed to the existing
 // `doUpdateBinding` path — no firmware or RPC change.
