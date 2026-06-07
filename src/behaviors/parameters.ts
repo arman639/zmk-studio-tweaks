@@ -86,8 +86,13 @@ export function formatBinding(
   const sets = behavior.metadata ?? [];
   if (sets.length === 0) return ref;
 
-  const set =
-    sets.find((s) => validateValue(layerIds, binding.param1, s.param1)) ?? sets[0];
+  // No matching set → the binding's param1 fits none of the behavior's shapes;
+  // emit just the reference rather than risk showing a param2 from a set that
+  // doesn't actually apply.
+  const set = sets.find((s) =>
+    validateValue(layerIds, binding.param1, s.param1)
+  );
+  if (!set) return ref;
   const fmt = (
     value: number,
     descs: BehaviorParameterValueDescription[] | undefined

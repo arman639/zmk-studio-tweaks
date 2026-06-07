@@ -696,23 +696,24 @@ const HidUsageGrid = ({
 
   // A whole-binding behavior tile, styled like a keycap (same height + font as
   // the keycode tiles) so it reads the same as picking a key. Widens for longer
-  // labels rather than shrinking the text. Highlighted when it is the current
-  // binding.
+  // labels rather than shrinking the text. It's a single-select "pick the
+  // current binding" control, so it's a `radio` (consistent with the residual
+  // behavior chips), highlighted when it is the current binding. The label is
+  // fully visible, so a native `title` replaces the keycode grid's hover tooltip.
   const renderBehaviorTile = (tile: BehaviorTile) => {
     const active = !!activeBinding && sameBinding(tile.binding, activeBinding);
     return (
-      <Tooltip
+      <button
         key={`${tile.binding.behaviorId}-${tile.binding.param1}-${tile.binding.param2}`}
-        label={tile.label}
+        type="button"
+        role="radio"
+        aria-checked={active}
+        title={tile.label}
+        onClick={() => onSelectBinding?.(tile.binding)}
+        className={`min-w-16 h-16 px-2 rounded border text-center flex items-center justify-center whitespace-nowrap leading-tight shrink-0 ${active ? "bg-primary text-primary-content" : "bg-base-200 hover:bg-base-300"}`}
       >
-        <Button
-          aria-pressed={active}
-          onPress={() => onSelectBinding?.(tile.binding)}
-          className={`min-w-16 h-16 px-2 rounded border text-center flex items-center justify-center whitespace-nowrap leading-tight shrink-0 ${active ? "bg-primary text-primary-content" : "bg-base-200 hover:bg-base-300"}`}
-        >
-          {tile.label}
-        </Button>
-      </Tooltip>
+        {tile.label}
+      </button>
     );
   };
 
@@ -751,8 +752,17 @@ const HidUsageGrid = ({
             <>
               {searchResults.map(renderUsageButton)}
               {/* Matching behavior tiles (Reset, BT_SEL, LCLK, …) so the search
-                  reaches the whole surface, not just the keycodes. */}
-              {behaviorSearchResults.map(renderBehaviorTile)}
+                  reaches the whole surface, not just the keycodes. Grouped as a
+                  radiogroup (own row) since the tiles are radios. */}
+              {behaviorSearchResults.length > 0 && (
+                <div
+                  role="radiogroup"
+                  aria-label="Matching behaviors"
+                  className="flex flex-wrap gap-1 basis-full"
+                >
+                  {behaviorSearchResults.map(renderBehaviorTile)}
+                </div>
+              )}
             </>
           )}
           {/* Keep the clear tiles reachable even when the search matches
@@ -909,7 +919,7 @@ const HidUsageGrid = ({
                 {section.heading}
               </span>
               <div
-                role="group"
+                role="radiogroup"
                 aria-label={section.heading}
                 className="flex flex-wrap gap-1"
               >

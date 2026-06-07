@@ -233,9 +233,12 @@ export const BehaviorBindingPicker = ({
   );
 
   // When the bound behavior changes (e.g. user clicked a different key on the
-  // keyboard image), jump the picker to the matching category.
+  // keyboard image), jump the picker to the matching category. Intentionally
+  // keyed on behaviorId only — we don't want to re-jump when currentGroup
+  // recomputes for the same behavior.
   useEffect(() => {
     if (currentGroup) setActiveGroup(currentGroup);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [behaviorId]);
 
   const availableGroups = GROUP_ORDER.filter(
@@ -326,6 +329,9 @@ export const BehaviorBindingPicker = ({
         param2: param2 || 0,
       });
     }
+    // Fires only when the local edit state changes; metadata/layers/callbacks
+    // are read fresh but must not re-trigger the write.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [behaviorId, param1, param2]);
 
   useEffect(() => {
