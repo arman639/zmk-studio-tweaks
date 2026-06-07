@@ -4,8 +4,9 @@ import { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/be
 import { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import { BehaviorParametersPicker } from "./BehaviorParametersPicker";
 import { SlotBindingPicker } from "./SlotBindingPicker";
-import { validateBinding } from "./parameters";
+import { formatBinding, validateBinding } from "./parameters";
 import { bindingToSlots, buildDerivationRegistry } from "./slots";
+import { BindingTileTab, isTileable, tileBindingsFor } from "./tiles";
 
 export interface BehaviorBindingPickerProps {
   binding: BehaviorBinding;
@@ -17,7 +18,9 @@ export interface BehaviorBindingPickerProps {
 // ZMK upstream-shipped behaviors, ordered by how often a typical keymap author
 // reaches for them within each group. The first entry of each group is the
 // "anchor" behavior (Key Press for typing, Momentary Layer for layers, etc.);
-// placeholders (Transparent / None) sit at the end.
+// placeholders (Transparent / None) sit at the end. Step 3a flattens the old
+// tier hierarchy into a single row of category tabs and splits the former single
+// "System" group into Bluetooth / Output / External Power / System.
 const STANDARD_BEHAVIORS: ReadonlyArray<readonly [name: string, group: string]> = [
   // Basic
   ["Key Press", "Basic"],
@@ -42,10 +45,13 @@ const STANDARD_BEHAVIORS: ReadonlyArray<readonly [name: string, group: string]> 
   ["Mouse Scroll", "Mouse"],
   ["mouse_move", "Mouse"],
   ["mouse_scroll", "Mouse"],
+  // Bluetooth
+  ["Bluetooth", "Bluetooth"],
+  // Output
+  ["Output Selection", "Output"],
+  // External Power
+  ["External Power", "External Power"],
   // System
-  ["Bluetooth", "System"],
-  ["Output Selection", "System"],
-  ["External Power", "System"],
   ["Reset", "System"],
   ["Bootloader", "System"],
   ["Studio Unlock", "System"],
@@ -58,7 +64,31 @@ const STANDARD_BEHAVIOR_ORDER: Record<string, number> = Object.fromEntries(
   STANDARD_BEHAVIORS.map(([name], i) => [name, i])
 );
 
-const GROUP_ORDER = ["Basic", "Layer", "Hold-Tap", "Mouse", "System", "Other"];
+const GROUP_ORDER = [
+  "Basic",
+  "Layer",
+  "Hold-Tap",
+  "Mouse",
+  "Bluetooth",
+  "Output",
+  "External Power",
+  "System",
+  "Other",
+];
+
+// Single-action behaviors are picked the same way a keycode is — as keycap
+// tiles in the Normal key grid's tab strip (issue #16, Step 3). Mouse stays its
+// own tab; Bluetooth / Output / External Power / System consolidate under one
+// "System" tab, inserted between International and Other. A behavior moves onto
+// the strip only when it's tile-able (constant / range / nil / no params); the
+// rest stay as chips in the residual "More behaviors" area until later steps.
+const STRIP_GROUPS: Record<string, "Mouse" | "System"> = {
+  Mouse: "Mouse",
+  Bluetooth: "System",
+  Output: "System",
+  "External Power": "System",
+  System: "System",
+};
 
 // Keycap faces for the in-grid clear tiles: None is left blank (an empty key —
 // its tooltip/aria-label still says "None"), the conventional ▽ for Transparent.
@@ -68,24 +98,22 @@ const CLEAR_TILE_GLYPHS: Record<string, string> = {
   Transparent: "▽",
 };
 
-interface BehaviorClass {
-  tier: "standard" | "extension";
-  group: string;
-}
-
-function classifyBehavior(b: GetBehaviorDetailsResponse): BehaviorClass {
+// The flat category a behavior lands in. Standard behaviors use their table
+// group; firmware-extension (keymap-author-defined) behaviors classify by shape
+// so they land in the same flat tabs (a mouse extension → Mouse, a hold-tap
+// shape → Hold-Tap, the rest → Other).
+function classifyBehavior(b: GetBehaviorDetailsResponse): string {
   const standard = STANDARD_BEHAVIOR_GROUPS[b.displayName];
-  if (standard) return { tier: "standard", group: standard };
+  if (standard) return standard;
 
-  // Firmware-extension (keymap-author-defined) behaviors: classify by shape.
   if (b.displayName.toLowerCase().includes("mouse")) {
-    return { tier: "extension", group: "Mouse" };
+    return "Mouse";
   }
   const set = b.metadata?.[0];
   if (set?.param2?.some((v) => v.hidUsage)) {
-    return { tier: "extension", group: "Hold-Tap" };
+    return "Hold-Tap";
   }
-  return { tier: "extension", group: "Other" };
+  return "Other";
 }
 
 export const BehaviorBindingPicker = ({
@@ -118,8 +146,8 @@ export const BehaviorBindingPicker = ({
     [behaviors]
   );
 
-  // Slot model (Step 2): the four core behaviors are edited through the Tap /
-  // Hold slot surface and derived from it, so their chips are hidden — the
+  // Slot model (Step 2): the four core behaviors are edited through the Normal /
+  // Hold mode slot surface and derived from it, so their chips are hidden — the
   // surface owns them, avoiding a two-ways-to-edit-one-binding sync hazard.
   const registry = useMemo(() => buildDerivationRegistry(behaviors), [behaviors]);
   const derivedChipIds = useMemo(
@@ -145,61 +173,77 @@ export const BehaviorBindingPicker = ({
     [behaviors]
   );
 
-  const tieredBehaviors = useMemo(() => {
-    // None / Transparent are surfaced as keycap tiles in the key grid, and the
-    // four core behaviors live on the slot surface, so drop all of their
-    // redundant chips from the behavior groups.
-    const hiddenIds = new Set([
-      ...clearBehaviors.map((b) => b.id),
-      ...derivedChipIds,
-    ]);
-    const out: Record<
-      "standard" | "extension",
-      Record<string, GetBehaviorDetailsResponse[]>
-    > = { standard: {}, extension: {} };
+  // A behavior shown as a keycap tile in the Normal grid's strip (Mouse /
+  // System), rather than as a chip in the residual area below.
+  const isStripBehavior = (b: GetBehaviorDetailsResponse) =>
+    isTileable(b) && STRIP_GROUPS[classifyBehavior(b)] !== undefined;
+
+  const hiddenIds = useMemo(
+    () =>
+      new Set([...clearBehaviors.map((b) => b.id), ...derivedChipIds]),
+    [clearBehaviors, derivedChipIds]
+  );
+
+  // Flat category map for the residual "More behaviors" area. None / Transparent
+  // surface as keycap tiles in the key grid, the four core behaviors live on the
+  // slot surface, and the single-action tile behaviors moved into the Normal
+  // strip — so drop all of those here.
+  const groupedBehaviors = useMemo(() => {
+    const out: Record<string, GetBehaviorDetailsResponse[]> = {};
     for (const b of sortedBehaviors) {
       if (hiddenIds.has(b.id)) continue;
-      const { tier, group } = classifyBehavior(b);
-      if (!out[tier][group]) out[tier][group] = [];
-      out[tier][group].push(b);
+      if (isStripBehavior(b)) continue;
+      const group = classifyBehavior(b);
+      if (!out[group]) out[group] = [];
+      out[group].push(b);
     }
     return out;
-  }, [sortedBehaviors, clearBehaviors, derivedChipIds]);
+  }, [sortedBehaviors, hiddenIds]);
 
-  const tiers: { key: "standard" | "extension"; title: string }[] = [
-    { key: "standard", title: "ZMK Standard" },
-    { key: "extension", title: "Firmware Extension" },
-  ];
+  // The whole-binding behavior tabs for the Normal strip: Mouse, then a
+  // consolidated System (Bluetooth / Output / External Power / System), each a
+  // run of labelled keycap-tile sections (one per source behavior).
+  const behaviorTabs = useMemo<BindingTileTab[]>(() => {
+    const sections: Record<"Mouse" | "System", BindingTileTab["sections"]> = {
+      Mouse: [],
+      System: [],
+    };
+    for (const b of sortedBehaviors) {
+      if (hiddenIds.has(b.id) || !isStripBehavior(b)) continue;
+      const tab = STRIP_GROUPS[classifyBehavior(b)];
+      sections[tab].push({
+        heading: b.displayName,
+        tiles: tileBindingsFor(b) ?? [],
+      });
+    }
+    const tabs: BindingTileTab[] = [];
+    if (sections.Mouse.length) tabs.push({ name: "Mouse", sections: sections.Mouse });
+    if (sections.System.length)
+      tabs.push({ name: "System", sections: sections.System });
+    return tabs;
+  }, [sortedBehaviors, hiddenIds]);
 
   const currentBehavior = behaviors.find((b) => b.id === behaviorId);
-  const currentClass = currentBehavior
+  const currentGroup = currentBehavior
     ? classifyBehavior(currentBehavior)
     : null;
 
-  const [activeTier, setActiveTier] = useState<"standard" | "extension">(
-    currentClass?.tier ?? "standard"
-  );
   const [activeGroup, setActiveGroup] = useState<string>(
-    currentClass?.group ?? "Basic"
+    currentGroup ?? "Basic"
   );
 
   // When the bound behavior changes (e.g. user clicked a different key on the
-  // keyboard image), jump the picker tabs to the matching tier/group.
+  // keyboard image), jump the picker to the matching category.
   useEffect(() => {
-    if (!currentClass) return;
-    setActiveTier(currentClass.tier);
-    setActiveGroup(currentClass.group);
+    if (currentGroup) setActiveGroup(currentGroup);
   }, [behaviorId]);
 
-  const availableTiers = tiers.filter((t) =>
-    Object.values(tieredBehaviors[t.key]).some((arr) => arr.length > 0)
+  const availableGroups = GROUP_ORDER.filter(
+    (g) => groupedBehaviors[g]?.length
   );
-  const availableGroupsForActiveTier = GROUP_ORDER.filter(
-    (g) => tieredBehaviors[activeTier][g]?.length
-  );
-  const effectiveGroup = availableGroupsForActiveTier.includes(activeGroup)
+  const effectiveGroup = availableGroups.includes(activeGroup)
     ? activeGroup
-    : availableGroupsForActiveTier[0];
+    : availableGroups[0];
 
   const selectBehavior = (id: number) => {
     if (id !== behaviorId) {
@@ -209,10 +253,27 @@ export const BehaviorBindingPicker = ({
     }
   };
 
+  // A tile encodes a finished binding (behaviorId + both params), so picking one
+  // sets all three at once — no parameter panel needed.
+  const selectTile = (b: BehaviorBinding) => {
+    setBehaviorId(b.behaviorId);
+    setParam1(b.param1);
+    setParam2(b.param2);
+  };
+
   // Shared look for the selectable behavior chips, so a future style tweak
   // stays consistent across the picker.
   const chipClass = (selected: boolean) =>
     `px-3 py-1 rounded border text-sm ${
+      selected
+        ? "bg-primary text-primary-content border-primary"
+        : "bg-base-200 hover:bg-base-300 border-base-300"
+    }`;
+
+  // Keycap-styled so picking a behavior tile reads like picking a key — same
+  // height + font as the Normal grid's keycode/behavior tiles.
+  const tileClass = (selected: boolean) =>
+    `min-w-16 h-16 px-2 rounded border whitespace-nowrap leading-tight flex items-center justify-center text-center ${
       selected
         ? "bg-primary text-primary-content border-primary"
         : "bg-base-200 hover:bg-base-300 border-base-300"
@@ -309,11 +370,23 @@ export const BehaviorBindingPicker = ({
     param2: param2 ?? 0,
   };
   const isCoreBinding = bindingToSlots(currentBinding, registry) !== null;
+  // A tile behavior (single-action / enum) bakes its params into the tile, so it
+  // doesn't get the parameter panel either — its active tile shows the state.
+  const isTileBinding = currentBehavior ? isTileable(currentBehavior) : false;
   const setBindingFromSlots = (b: BehaviorBinding) => {
     setBehaviorId(b.behaviorId);
     setParam1(b.param1);
     setParam2(b.param2);
   };
+
+  const groupBehaviors = groupedBehaviors[effectiveGroup] ?? [];
+  const tileBehaviors = groupBehaviors.filter(isTileable);
+  const chipBehaviors = groupBehaviors.filter((b) => !isTileable(b));
+
+  const tileActive = (b: BehaviorBinding) =>
+    b.behaviorId === behaviorId &&
+    b.param1 === (param1 ?? 0) &&
+    b.param2 === (param2 ?? 0);
 
   return (
     <div className="flex flex-col gap-3">
@@ -323,87 +396,102 @@ export const BehaviorBindingPicker = ({
         layers={layers}
         onBindingChanged={setBindingFromSlots}
         clearTiles={clearTiles}
+        behaviorTabs={behaviorTabs}
+        currentBehaviorName={currentBehavior?.displayName}
+        bindingCode={formatBinding(
+          currentBinding,
+          currentBehavior,
+          layers.map((l) => l.id)
+        )}
       />
-      <div className="flex flex-col gap-1 border-t pt-2">
+      <div className="flex flex-col gap-2 border-t pt-2">
         <label className="text-sm uppercase tracking-widest font-bold text-primary">
-          Not yet on the slot surface
+          More behaviors
         </label>
         <p className="text-xs text-base-content/60">
-          Temporary home for behaviors the slots don&apos;t cover yet — these move
-          onto tiles and the slot surface in later steps.
+          Pick a tile for a finished binding, or a behavior to set its
+          parameters. Typing, layer and hold-tap keys live on the slot surface
+          above.
         </p>
-        <div className="flex flex-col gap-1">
-          <div role="tablist" aria-label="Behavior tier" className="flex border-b">
-              {availableTiers.map((tier) => {
-                const isActive = activeTier === tier.key;
-                return (
-                  <button
-                    key={tier.key}
-                    role="tab"
-                    type="button"
-                    aria-selected={isActive}
-                    onClick={() => {
-                      setActiveTier(tier.key);
-                      // Reset to the leftmost category of the new tier so the
-                      // previous tier's context (e.g. Hold-Tap selected in
-                      // Firmware Ext) doesn't carry over and look pre-selected.
-                      const firstGroup = GROUP_ORDER.find(
-                        (g) => tieredBehaviors[tier.key][g]?.length
-                      );
-                      if (firstGroup) {
-                        setActiveGroup(firstGroup);
-                      }
-                    }}
-                    className={`px-4 py-1 text-base ${
-                      isActive
-                        ? "border-b-2 border-primary text-primary font-semibold"
-                        : "text-base-content/80 hover:text-base-content"
-                    }`}
-                  >
-                    {tier.title}
-                  </button>
-                );
-              })}
-            </div>
-            <div
-              role="tablist"
-              aria-label="Behavior category"
-              className="flex flex-wrap gap-1"
-            >
-              {availableGroupsForActiveTier.map((g) => {
-                const isActive = effectiveGroup === g;
-                return (
-                  <button
-                    key={g}
-                    role="tab"
-                    type="button"
-                    aria-selected={isActive}
-                    onClick={() => setActiveGroup(g)}
-                    className={`px-3 py-1 text-sm ${
-                      isActive
-                        ? "border-b-2 border-primary text-primary font-medium"
-                        : "text-base-content/70 hover:text-base-content border-b-2 border-transparent"
-                    }`}
-                  >
-                    {g}
-                  </button>
-                );
-              })}
-            </div>
+        <div
+          role="tablist"
+          aria-label="Behavior category"
+          className="flex flex-wrap gap-1 border-b"
+        >
+          {availableGroups.map((g) => {
+            const isActive = effectiveGroup === g;
+            return (
+              <button
+                key={g}
+                role="tab"
+                type="button"
+                aria-selected={isActive}
+                onClick={() => setActiveGroup(g)}
+                className={`px-3 py-1 text-sm ${
+                  isActive
+                    ? "border-b-2 border-primary text-primary font-medium"
+                    : "text-base-content/70 hover:text-base-content border-b-2 border-transparent"
+                }`}
+              >
+                {g}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col gap-3 pt-1">
+          {/* Tile-able behaviors: a labelled grid per behavior, one tile per
+              finished binding. The per-behavior heading disambiguates shared
+              value names (e.g. Mouse Move "Up" vs Mouse Scroll "Up"). */}
+          {tileBehaviors.map((b) => {
+            const tiles = tileBindingsFor(b) ?? [];
+            return (
+              <div key={b.id} className="flex flex-col gap-1">
+                <span className="text-sm uppercase tracking-wide font-semibold text-base-content/70">
+                  {b.displayName}
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-label={b.displayName}
+                  className="flex flex-wrap gap-1"
+                >
+                  {tiles.map((tile) => {
+                    const selected = tileActive(tile.binding);
+                    return (
+                      <button
+                        key={`${tile.binding.behaviorId}-${tile.binding.param1}-${tile.binding.param2}`}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => selectTile(tile.binding)}
+                        className={tileClass(selected)}
+                      >
+                        {tile.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Non-tile-able behaviors (Sticky Key, persistent layers, custom
+              hold-taps): pick a chip, then set its parameters below. */}
+          {chipBehaviors.length > 0 && (
             <div
               role="radiogroup"
               aria-label="Behavior"
-              className="flex flex-wrap gap-1 pt-1"
+              className="flex flex-wrap gap-1"
             >
-              {(tieredBehaviors[activeTier][effectiveGroup] || []).map(
-                renderBehaviorChip
-              )}
+              {chipBehaviors.map(renderBehaviorChip)}
             </div>
+          )}
         </div>
       </div>
-      {/* Core behaviors are edited on the slot surface above; only non-core
-          behaviors (Sticky Key, Mouse, System, ...) keep the params picker. */}
-      {metadata && !isCoreBinding && (
+      {/* Core behaviors are edited on the slot surface above, and tile behaviors
+          bake their params into the tile; only non-core, non-tile behaviors
+          (Sticky Key, custom hold-taps, ...) keep the params picker. */}
+      {metadata && !isCoreBinding && !isTileBinding && (
         <BehaviorParametersPicker
           metadata={metadata}
           param1={param1}

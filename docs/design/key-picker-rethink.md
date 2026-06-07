@@ -6,10 +6,11 @@
 > issue is the user-facing summary; this note is the working design. English is
 > authoritative; a Japanese mirror follows below.
 >
-> Status: **Step 1 shipped (PR #27); Step 2 in progress.** The slot model
-> converged on the **Normal / Hold mode** framing (§2) — earlier drafts said
-> "Tap / Hold", renamed because "Tap" wrongly implies short-press-only for a plain
-> `&kp`. Coverage of every standard ZMK behavior is verified in §4a.
+> Status: **Step 1 shipped (PR #27); Step 2 merged to the integration branch;
+> Step 3a complete** (the keycode + behavior tile surface — see §5). The slot
+> model converged on the **Normal / Hold mode** framing (§2) — earlier drafts
+> said "Tap / Hold", renamed because "Tap" wrongly implies short-press-only for a
+> plain `&kp`. Coverage of every standard ZMK behavior is verified in §4a.
 
 ---
 
@@ -353,10 +354,105 @@ end state. Each step is its own PR.
 
 ### Step 3 — tile-ify the single-action behaviors
 
-- **Goal:** turn Mouse / Bluetooth / Output / External Power / System (and the
-  parameterless `&caps_word` / `&key_repeat` / `&gresc`) into category tabs of
-  tiles; fold media into the Key Press surface (page 12, §3a); give `&sk` / `&kt`
-  the parameterised-tile treatment (shape (c), §3); collapse the Basic chip row.
+Split into two PRs to keep each diff small (this fork's minimal-diff stance).
+Media already folds into the Key Press / Normal grid (page 12), done in Step 2.
+
+> **Plan note (build the end-state incrementally).** Rather than parking migrated
+> behaviors in throwaway scaffolding until Step 5 unifies everything, each step
+> moves its behaviors into (or toward) their **final** place, so the converged
+> surface is visible — and therefore critiquable — at every step. Step 3a already
+> realizes the key part of the Step 5 end-state (behavior tiles living in the
+> Normal grid's tab strip), so Step 5 shrinks to retiring whatever residual chip
+> area remains.
+
+**Step 3a — keycap behavior tiles in the Normal grid's tab strip.**
+
+- **Tile-able behaviors → keycap tiles.** A behavior is *tile-able* when **all**
+  its parameters are `constant` / `range` / `nil` / absent, so each concrete
+  `(param1, param2)` combination is a finished binding (shape (a), §3a). An
+  enum/range parameter is **exploded** into one tile per value (e.g. Bluetooth →
+  `BT_SEL 0…N`, `BT_CLR`, …). Tiles are styled as **keycaps** so picking a
+  behavior reads the same as picking a key. A behavior whose parameter needs a
+  rich picker — a HID key or a layer (`&sk` / `&kt`, the persistent-layer
+  behaviors, custom hold-taps) — is **not** tile-able and keeps the chip +
+  parameter-picker flow.
+- **Single-action behaviors join the Normal grid's tab strip.** Instead of a
+  separate behavior-tab area, the tile-able single-action behaviors render as
+  extra tabs **in the same tab strip as the keycode grid**, inserted between
+  *International* and *Other*: a **Mouse** tab, and a consolidated **System** tab
+  that folds Bluetooth / Output / External Power / System (Reset / Bootloader /
+  Studio Unlock) into one tab of labelled keycap-tile sections. Picking a keycode
+  tile fills the Normal key (→ `&kp`); picking a behavior tile sets the **whole**
+  binding (→ `&mkp` / `&bt` / `&reset` / …). The reverse-lookup slot label names
+  the active behavior (e.g. *"Slots = Reset"*), and its tile/tab is highlighted —
+  which dissolves most of the §8a "non-core binding shows an empty slot surface"
+  blocker (the binding is now named and visible, not silently overwritten).
+- **Residual "More behaviors" area shrinks** to the not-yet-migrated, non-strip
+  behaviors: the parameterless Basic singles (`&caps_word` / `&key_repeat` /
+  `&gresc`, as keycap tiles), the still-chip `&sk` / `&kt` (→ Step 3b), and the
+  persistent-layer / custom hold-tap chips (→ Step 4). Its tier tabs are gone
+  (single flat category row).
+- **Pure helper** ([`tiles.ts`](../../src/behaviors/tiles.ts), unit-tested):
+  `tileBindingsFor(behavior) → BehaviorTile[] | null` and the `BindingTileTab`
+  shape the Normal grid consumes. [`HidUsagePicker`](../../src/behaviors/HidUsagePicker.tsx)
+  gains optional `extraTabs` / `activeBinding` / `onSelectBinding` so the
+  behavior tabs live in its tab strip without disturbing its other uses.
+- **Tab-strip fit (two follow-on tweaks driven by the wider strip).** Adding
+  Mouse / System made the keycode tab strip overflow next to the always-on
+  implicit-modifier column, so:
+  - **One host-adaptive "Basic" tab** replaces the old fixed *Basic* (ANSI) +
+    *ISO/JIS* pair. The single tab renders the shape matching the selected host
+    layout (`layout.physical`): ANSI for `ansi`, ISO for `iso` (adds NUHS /
+    NUBS), JIS for `jis` (¥ / IME), KO for `ko`. The old design always showed an
+    ANSI tab plus an adaptive one (which, on ANSI, rendered ISO and thus surfaced
+    NUHS/NUBS a US board lacks). Now ISO-only keys appear only once an ISO/JIS
+    layout is selected — matching the physical board — and stay reachable via the
+    search box regardless. One fewer tab, and correct ANSI for US users.
+  - **The "+ Send with" (implicit-modifier) picker moves out of the side column.**
+    On the Normal-slot surface (`inline` mode), it's a compact "Send with" row of
+    modifier toggles **below the full-width grid**, shown only on the tabs where
+    composing a modified keycode applies (Basic / Function + Nav) and hidden
+    elsewhere — so it never steals tab/grid width. Other `HidUsagePicker` uses
+    (the Sticky Key / Key Toggle key picker) keep the side column.
+  - **Normal-surface chrome trimmed.** With the modifiers inline, the grid's
+    redundant "Key" header is dropped and the **search box moves up onto the
+    "NORMAL" row** (the slot already labels the section), so "Key" / "Send with"
+    are no longer competing section headers. `HidUsagePicker` gains `inline` +
+    controlled `search` / `onSearchChange`; the slot surface owns the search box.
+    The filter now also **spans the behavior tiles** (matching tile label /
+    section / tab), so a search like `reset` / `bt` / `mouse` surfaces the
+    Mouse / System tiles too — the search box stops being keycode-only now that
+    those tiles share the surface.
+  - **Host-layout-aware reverse label.** The "NORMAL = <key>" label resolves the
+    glyph through the active host layout (like the grid), so on JIS, Shift+2 reads
+    `"` not the ANSI `@`.
+  - **Devicetree code on the slot label.** Next to "Slots = <behavior>" the
+    surface shows the binding as the ZMK code an author would write — `&mt LSHFT
+    RET`, `&kp Q`, `&mo 1`, `&bt BT_SEL 0`, `&reset`. `formatBinding`
+    ([`parameters.ts`](../../src/behaviors/parameters.ts), unit-tested) reuses the
+    existing `dtsRefForDisplayName` / `formatBindingParam` serializers and prefers
+    a parameter's metadata constant name (the ZMK macro) over its raw number.
+  - **Keycode-picker cleanups (driven by a DRY review).** Tab identifiers are
+    named constants (no duplicated `"Function + Nav"` / `"Other"` magic strings
+    across the categorizer, tab-order list, panel renderer, and modifier-row
+    check). The common consumer media keys (Play / Pause / Stop / Next / Prev /
+    Vol± / Mute, a curated HID-id set) are promoted out of the "Other" catch-all
+    onto the **Apps/Media/Special** tab. The remaining "Other" combobox — a long
+    consumer-page tail the HID spec leaves uncategorised — is grouped into
+    **labelled sections** (Keyboard/Keypad · Media & Playback · Audio · Display &
+    Camera · Application Launch · Application Control · Telephony & Contacts ·
+    Other) derived from the usage, so it's navigable. The filter and the section
+    grouping both read from the derived usage data, not hand-maintained lists.
+- **Tile styling:** behavior tiles are keycaps with the same height/font as the
+  keycode tiles (widening for longer labels, not shrinking the text); section
+  headings (`BLUETOOTH`, …) are `text-sm` so they read as real dividers.
+
+**Step 3b — parameterised `&sk` / `&kt` tiles + collapse the Basic chip row.**
+
+- Give `&sk` (Sticky Key) and `&kt` (Key Toggle) the shape-(c) treatment (§3c): a
+  tile that reveals a single-key picker. With those off the chip list the Basic
+  category's chips are gone, so the residual chip row collapses.
+
 - **Risk:** medium — mostly UI; reuses the grid/tile patterns from
   [`HidUsagePicker.tsx`](../../src/behaviors/HidUsagePicker.tsx). Capability-aware:
   a tab/tile renders only for behaviors the firmware exposes.
@@ -431,15 +527,17 @@ stays here and is not pushed upstream.
 These are acceptable on the integration branch but **must be resolved before the
 integration branch merges to `main`**:
 
-- **Non-core bindings still render the slot surface.** Selecting a non-core
-  behavior (Sticky Key, Caps Word, …) shows the slot surface above with
-  *"Slots = No matching behavior"* and an empty Normal grid; clicking a key in
-  that empty grid silently overwrites the binding to `&kp`. The slot surface must
-  stay reachable (it is the only way to switch *into* a core behavior, since the
-  core chips are hidden), but for a non-core current binding it should collapse /
-  disable the grid, label the actual current behavior, or warn before overwriting.
-  Step 3-4 (tiling the non-core behaviors) largely dissolves this, so it may
-  resolve naturally — but confirm before `main`.
+- **Non-core bindings on the slot surface — largely resolved by Step 3a.** A
+  non-core current binding no longer reads as a blank *"No matching behavior"*:
+  the slot label now **names the actual behavior** (e.g. *"Slots = Reset"*) and
+  shows its **devicetree code** (`&reset`, `&bt BT_SEL 0`, …), and the behavior's
+  tile is highlighted in its tab (Mouse / System) — so the state is visible, not
+  silent. The Normal grid is shared with the behavior tabs by design, so picking a
+  key on the Basic tab is the *deliberate* way to switch a non-core binding back
+  to a Normal `&kp` (no longer a silent footgun on a stray click). The not-yet-
+  tiled chip behaviors (Sticky Key / Key Toggle → Step 3b; persistent layers →
+  Step 4) keep the same labelled-and-coded state. **Confirm the feel before
+  `main`**, but the silent/ambiguous part of the blocker is gone.
 - **Minor (acceptable for now):** `deriveBinding → null` makes `writeSlots` a
   no-op (silent) when the firmware doesn't expose the derived behavior; tie this
   to the reverse-lookup "no matching behavior" state rather than doing nothing.
@@ -712,11 +810,37 @@ behavior は「実際にいくつ枠を持つか」で形が分かれる。見�
     ホールド枠を埋める）の整合を保つ必要がある。封じ込めとして、スロット面が担う
     派生対象 behavior（`&kp`/`&mt`/`&lt`/`&mo`）の**チップは早めに隠し**、両方を活かして
     三重同期しない。
-- **Step 3（タイル化）** — Mouse / Bluetooth / Output / External Power / System
-  （と param なしの caps_word/key_repeat/gresc）をカテゴリタブのタイルに。メディアは
-  Key Press 面（page 12, §3a）へ内包。`&sk` / `&kt` はパラメータ付きタイル（shape (c),
-  §3）に。Basic チップ列を畳む。`HidUsagePicker` のグリッド/タイル型を再利用。
-  capability 連動。
+- **Step 3（タイル化）** — 差分を小さく保つため 2 PR に分割（英語版が正）。メディアは
+  Step 2 で Key Press / Normal グリッド（page 12）に内包済み。
+  - **方針（最終形を逐次作る）** — 移行した behavior を Step 5 まで使い捨ての仮置き場に
+    留めず、各 Step で**最終的な場所**へ動かす。こうすれば収束後の面が毎 Step 見えて、
+    改善を指摘できる。3a で既に Step 5 終着形の要（behavior タイルを Normal グリッドの
+    タブ列に置く）を実現するので、Step 5 は残りのチップ領域の撤去だけに縮む。
+  - **3a（Normal グリッドのタブ列にキーキャップ behavior タイル）** — パラメータが全て
+    constant / range / nil / 無しの「タイル可能」behavior を、`(param1,param2)` の全組合せ
+    1 タイルずつ・**キーキャップ風**に。enum/range は**各値を個別タイルに展開**（例:
+    `BT_SEL 0…N`）。これらを別領域ではなく**キーコードグリッドと同じタブ列**に追加し、
+    International↔Other の間に **Mouse** タブと、Bluetooth/Output/External Power/System を
+    1 つに集約した **System** タブを差し込む。キーコードタイルは Normal キー（→`&kp`）、
+    behavior タイルは**binding 全体**（→`&mkp`/`&bt`/`&reset` 等）を設定。逆引きラベルが
+    現在の behavior 名を出し（例「Slots = Reset」）タイル/タブをハイライトするので、§8a の
+    「非コア binding で空スロット面」ブロッカーの大半が解消（黙って上書きされず、名前が
+    見える）。HID キー/レイヤーの param が要る `&sk` / `&kt`・持続レイヤー・カスタム
+    hold-tap は**タイル不可**でチップ継続。tier タブは廃止（カテゴリ一列）。残置「More
+    behaviors」は未移行分（caps_word/key_repeat/gresc タイル＋ sk/kt チップ＋レイヤー等）に
+    縮小。`HidUsagePicker` に `extraTabs` / `activeBinding` / `onSelectBinding` を追加。
+  - **タブ列の収まり（幅対策2点）** — Mouse/System 追加でキーコードタブ列が修飾列と幅を
+    奪い合いあふれたため: ①**Basic を host 連動の1タブに統合**（旧「Basic(ANSI固定)＋ISO/JIS」
+    を廃し、選択中ホスト配列で ansi→ANSI / iso→ISO(NUHS/NUBS) / jis→JIS / ko→KO を出し分け。
+    ANSI ユーザーは ANSI 形状で正しく、ISO/JIS キーは配列選択時のみ出る・検索からは常時可）。
+    ②**「+ Send with」をサイド列から外す**: Normal 面（inline）ではグリッド全幅の下に
+    「Send with」修飾トグル行として置き、Basic / Function+Nav のみ表示（他タブ非表示）。
+    sk/kt のキーピッカー等は従来のサイド列のまま。③Normal 面の chrome 整理: 修飾を行に
+    したので冗長な「KEY」ラベルを廃し、**検索ボックスを「NORMAL」行へ移設**（節見出しは
+    NORMAL が兼ねる）。`HidUsagePicker` に `inline` ＋ controlled `search`/`onSearchChange`。
+    ④タイルはキーキャップ風に文字サイズ統一、セクション見出しを `text-sm` に。
+  - **3b** — `&sk` / `&kt` をパラメータ付きタイル（shape (c)）に。Basic チップ列を畳む。
+  - `HidUsagePicker` のグリッド/タイル型を再利用。capability 連動。
 - **Step 4（逆引きラベル）** — スロット面に「いまの組み合わせ＝◯◯」の控えめ表示、
   レイヤーサブモード（to/tog/sl）、カスタム hold-tap の identity 選択（§3b）。
 - **Step 5 以降（要別設計）** — tier/カテゴリのタブ階層を撤去し「(a)＋(b)＋(c)」へ。
