@@ -70,12 +70,18 @@ const B = {
   mouseKeyPress: 17,
   mouseMove: 18,
   mouseScroll: 19,
+  keyToggle: 20,
+  keyRepeat: 21,
+  graveEscape: 22,
 } as const;
 
 const BEHAVIORS: GetBehaviorDetailsResponse[] = [
   { id: B.keyPress, displayName: "Key Press", metadata: [{ param1: [hidParam("key")], param2: [] }] },
   { id: B.stickyKey, displayName: "Sticky Key", metadata: [{ param1: [hidParam("key")], param2: [] }] },
+  { id: B.keyToggle, displayName: "Key Toggle", metadata: [{ param1: [hidParam("key")], param2: [] }] },
   { id: B.capsWord, displayName: "Caps Word", metadata: [] },
+  { id: B.keyRepeat, displayName: "Key Repeat", metadata: [] },
+  { id: B.graveEscape, displayName: "Grave/Escape", metadata: [] },
   { id: B.transparent, displayName: "Transparent", metadata: [] },
   { id: B.none, displayName: "None", metadata: [] },
   { id: B.momentaryLayer, displayName: "Momentary Layer", metadata: [{ param1: [layerParam("layer")], param2: [] }] },

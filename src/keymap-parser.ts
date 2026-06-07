@@ -118,9 +118,10 @@ const behaviorAliases: Record<string, string> = {
   bootloader: "Bootloader",
   reset: "Reset",
   soft_off: "Soft Off",
+  kt: "Key Toggle",
   caps_word: "Caps Word",
   key_repeat: "Key Repeat",
-  gresc: "Grave Escape",
+  gresc: "Grave/Escape",
   studio_unlock: "Studio Unlock",
 };
 

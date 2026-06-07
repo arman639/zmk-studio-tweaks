@@ -6,7 +6,13 @@ import { BehaviorParametersPicker } from "./BehaviorParametersPicker";
 import { SlotBindingPicker } from "./SlotBindingPicker";
 import { formatBinding, validateBinding } from "./parameters";
 import { bindingToSlots, buildDerivationRegistry } from "./slots";
-import { BindingTileTab, isTileable, tileBindingsFor } from "./tiles";
+import {
+  BehaviorTile,
+  BindingTileTab,
+  isParamTileable,
+  isTileable,
+  tileBindingsFor,
+} from "./tiles";
 
 export interface BehaviorBindingPickerProps {
   binding: BehaviorBinding;
@@ -22,12 +28,13 @@ export interface BehaviorBindingPickerProps {
 // tier hierarchy into a single row of category tabs and splits the former single
 // "System" group into Bluetooth / Output / External Power / System.
 const STANDARD_BEHAVIORS: ReadonlyArray<readonly [name: string, group: string]> = [
-  // Basic
+  // Basic — Sticky Key / Key Toggle (parameterised tiles) lead the Basic-tab
+  // column, followed by the parameterless flavor tiles.
   ["Key Press", "Basic"],
   ["Sticky Key", "Basic"],
+  ["Key Toggle", "Basic"],
   ["Caps Word", "Basic"],
   ["Key Repeat", "Basic"],
-  ["Key Toggle", "Basic"],
   ["Grave/Escape", "Basic"],
   ["Transparent", "Basic"],
   ["None", "Basic"],
@@ -184,6 +191,20 @@ export const BehaviorBindingPicker = ({
     [clearBehaviors, derivedChipIds]
   );
 
+  // The Basic "flavor" behaviors leave the residual chip area (issue #16, Step
+  // 3b). They split by shape: the parameterless ones (Caps Word / Key Repeat /
+  // Grave-Escape) are one-tap finished tiles in the Normal grid's Basic tab; the
+  // single-key ones (Sticky Key / Key Toggle) are key-state latches on the slot
+  // surface. (Key Press also has the single-key shape but is a hidden core
+  // behavior, so hiddenIds already excludes it.)
+  const isBasicFinishedTile = (b: GetBehaviorDetailsResponse) =>
+    classifyBehavior(b) === "Basic" && !hiddenIds.has(b.id) && isTileable(b);
+  const isBasicWrapper = (b: GetBehaviorDetailsResponse) =>
+    classifyBehavior(b) === "Basic" &&
+    !hiddenIds.has(b.id) &&
+    !isTileable(b) &&
+    isParamTileable(b);
+
   // Flat category map for the residual "More behaviors" area. None / Transparent
   // surface as keycap tiles in the key grid, the four core behaviors live on the
   // slot surface, and the single-action tile behaviors moved into the Normal
@@ -193,6 +214,7 @@ export const BehaviorBindingPicker = ({
     for (const b of sortedBehaviors) {
       if (hiddenIds.has(b.id)) continue;
       if (isStripBehavior(b)) continue;
+      if (isBasicFinishedTile(b) || isBasicWrapper(b)) continue;
       const group = classifyBehavior(b);
       if (!out[group]) out[group] = [];
       out[group].push(b);
@@ -221,6 +243,26 @@ export const BehaviorBindingPicker = ({
     if (sections.System.length)
       tabs.push({ name: "System", sections: sections.System });
     return tabs;
+  }, [sortedBehaviors, hiddenIds]);
+
+  // The Basic-tab one-tap flavor tiles (Caps Word / Key Repeat / Grave-Escape),
+  // one finished binding each. Capability-aware — only firmware-exposed ones.
+  const basicBehaviorTiles = useMemo<BehaviorTile[]>(() => {
+    const out: BehaviorTile[] = [];
+    for (const b of sortedBehaviors) {
+      if (isBasicFinishedTile(b)) out.push(...(tileBindingsFor(b) ?? []));
+    }
+    return out;
+  }, [sortedBehaviors, hiddenIds]);
+
+  // Key-state latch behaviors (Sticky Key / Key Toggle) the firmware exposes,
+  // offered as toggles on the slot surface that wrap the Normal key.
+  const keyStateWrappers = useMemo(() => {
+    const out: { id: number; label: string }[] = [];
+    for (const b of sortedBehaviors) {
+      if (isBasicWrapper(b)) out.push({ id: b.id, label: b.displayName });
+    }
+    return out;
   }, [sortedBehaviors, hiddenIds]);
 
   const currentBehavior = behaviors.find((b) => b.id === behaviorId);
@@ -379,6 +421,14 @@ export const BehaviorBindingPicker = ({
   // A tile behavior (single-action / enum) bakes its params into the tile, so it
   // doesn't get the parameter panel either — its active tile shows the state.
   const isTileBinding = currentBehavior ? isTileable(currentBehavior) : false;
+  // A param-tile behavior (Sticky Key / Key Toggle) picks its key in-panel on the
+  // slot surface, so it skips the far-bottom params picker too. Key Press shares
+  // the single-HID-key shape but is a *core* behavior (edited via the slots), so
+  // gate on !isCoreBinding to keep it out of the param-tile path.
+  const isParamTileBinding =
+    currentBehavior && !isCoreBinding
+      ? isParamTileable(currentBehavior)
+      : false;
   const setBindingFromSlots = (b: BehaviorBinding) => {
     setBehaviorId(b.behaviorId);
     setParam1(b.param1);
@@ -403,6 +453,8 @@ export const BehaviorBindingPicker = ({
         onBindingChanged={setBindingFromSlots}
         clearTiles={clearTiles}
         behaviorTabs={behaviorTabs}
+        basicBehaviorTiles={basicBehaviorTiles}
+        keyStateWrappers={keyStateWrappers}
         currentBehaviorName={currentBehavior?.displayName}
         bindingCode={formatBinding(
           currentBinding,
@@ -410,13 +462,17 @@ export const BehaviorBindingPicker = ({
           layers.map((l) => l.id)
         )}
       />
+      {/* Residual area for behaviors not yet migrated onto the slot surface or
+          the Normal grid's tabs (persistent layers, custom hold-taps, ...). It
+          disappears entirely once nothing's left to show. */}
+      {availableGroups.length > 0 && (
       <div className="flex flex-col gap-2 border-t pt-2">
         <label className="text-sm uppercase tracking-widest font-bold text-primary">
           More behaviors
         </label>
         <p className="text-xs text-base-content/60">
           Pick a tile for a finished binding, or a behavior to set its
-          parameters. Typing, layer and hold-tap keys live on the slot surface
+          parameters. Typing, basic and hold-tap keys live on the slot surface
           above.
         </p>
         <div
@@ -481,8 +537,8 @@ export const BehaviorBindingPicker = ({
             );
           })}
 
-          {/* Non-tile-able behaviors (Sticky Key, persistent layers, custom
-              hold-taps): pick a chip, then set its parameters below. */}
+          {/* Non-tile-able behaviors (persistent layers, custom hold-taps):
+              pick a chip, then set its parameters below. */}
           {chipBehaviors.length > 0 && (
             <div
               role="radiogroup"
@@ -494,10 +550,12 @@ export const BehaviorBindingPicker = ({
           )}
         </div>
       </div>
-      {/* Core behaviors are edited on the slot surface above, and tile behaviors
-          bake their params into the tile; only non-core, non-tile behaviors
-          (Sticky Key, custom hold-taps, ...) keep the params picker. */}
-      {metadata && !isCoreBinding && !isTileBinding && (
+      )}
+      {/* Core behaviors are edited on the slot surface above, tile behaviors bake
+          their params into the tile, and param-tile behaviors (Sticky Key / Key
+          Toggle) pick their key in-panel; only the remaining non-core behaviors
+          (persistent layers, custom hold-taps, ...) keep the params picker. */}
+      {metadata && !isCoreBinding && !isTileBinding && !isParamTileBinding && (
         <BehaviorParametersPicker
           metadata={metadata}
           param1={param1}
