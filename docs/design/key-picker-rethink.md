@@ -6,11 +6,15 @@
 > issue is the user-facing summary; this note is the working design. English is
 > authoritative; a Japanese mirror follows below.
 >
-> Status: **Step 1 shipped (PR #27); Step 2 merged to the integration branch;
-> Step 3a complete** (the keycode + behavior tile surface — see §5). The slot
-> model converged on the **Normal / Hold mode** framing (§2) — earlier drafts
-> said "Tap / Hold", renamed because "Tap" wrongly implies short-press-only for a
-> plain `&kp`. Coverage of every standard ZMK behavior is verified in §4a.
+> Status: **Step 1 shipped (PR #27); Steps 2, 3a, 3b merged to the integration
+> branch** (Step 3b via PR #32). See §5. The slot model converged on the
+> **Normal / Hold mode** framing (§2) — earlier drafts said "Tap / Hold", renamed
+> because "Tap" wrongly implies short-press-only for a plain `&kp`. Coverage of
+> every standard ZMK behavior is verified in §4a. **Step 3b deviated from the
+> original "parameterised tile" idea (§3c): `&sk`/`&kt` shipped as a *key-state
+> latch* — a checkbox pair on the slot label that wraps the Normal key — which
+> fits the "wraps a key, not is a key" nature better than a tile.** Step 4 is
+> next.
 
 ---
 
@@ -171,13 +175,21 @@ category, but the UI is uniformly "open a tab, press a tile."
 - **Caps Word (`&caps_word`) / Key Repeat (`&key_repeat`) / Grave-Escape
   (`&gresc`)** — parameterless single tiles.
 
-### (c) Parameterised tiles — one tile, one parameter
+### (c) Key-state latches — wrap the Normal key (`&sk` / `&kt`)
 
 `&sk` (sticky key) and `&kt` (key toggle) take a single key/mod parameter, so they
 are **not** "one tile = one binding": pressing the tile then needs a key chosen.
-Model them as a tile that reveals a single-key picker (equivalently, a "tap-only"
-degenerate of the slot surface). Calling them tile-select would be a category
-error. (See the appendix for what these flavor behaviors actually do.)
+The original plan modelled them as a tile that reveals a single-key picker; **as
+built (Step 3b) they are instead a *key-state latch*** — the cleaner framing is
+that they *wrap* a key rather than *being* a key (like the "+ Send with" implicit
+modifiers wrap the Normal key). So they ship as a **checkbox pair on the slot
+label** (`Latch: ☐ Sticky Key ☐ Key Toggle`); ticking one turns the current
+Normal key into `&sk <key>` / `&kt <key>`, and the key itself is still picked from
+the Normal grid. They are mutually exclusive and disabled while Hold mode is on (a
+hold-tap can't also be latched); conversely, while a latch is active the grid is
+**key-only** (the whole-binding tabs/tiles grey out, but None / Transparent stay
+live). Calling them tile-select would be a category error. (See the appendix for
+what these flavor behaviors actually do.)
 
 ### (b) Slot-fill — two slots, behavior derived per §2
 
@@ -447,15 +459,31 @@ Media already folds into the Key Press / Normal grid (page 12), done in Step 2.
   keycode tiles (widening for longer labels, not shrinking the text); section
   headings (`BLUETOOTH`, …) are `text-sm` so they read as real dividers.
 
-**Step 3b — parameterised `&sk` / `&kt` tiles + collapse the Basic chip row.**
+**Step 3b — `&sk` / `&kt` key-state latches + Basic flavor tiles (shipped, PR #32).**
 
-- Give `&sk` (Sticky Key) and `&kt` (Key Toggle) the shape-(c) treatment (§3c): a
-  tile that reveals a single-key picker. With those off the chip list the Basic
-  category's chips are gone, so the residual chip row collapses.
+The Basic "flavor" behaviors leave the residual chip area entirely, so the
+"More behaviors" Basic group is gone. They split by shape:
+
+- **`&sk` / `&kt` → key-state latch (§3c).** A `Latch: ☐ Sticky Key ☐ Key Toggle`
+  checkbox pair on the slot label that wraps the Normal key (`&kp K` → `&sk K` /
+  `&kt K`); the key is picked from the grid. Mutually exclusive with each other
+  and with Hold mode; while latched the grid is key-only (Mouse / System tabs and
+  the one-tap tiles disable, None / Transparent stay live). Lives in
+  [`SlotBindingPicker.tsx`](../../src/behaviors/SlotBindingPicker.tsx)
+  (`keyStateWrappers`, `toggleWrapper`, wrapper-aware `setNormalKey`); the grid's
+  `keyOnly` mode is in [`HidUsagePicker.tsx`](../../src/behaviors/HidUsagePicker.tsx).
+- **Caps Word / Key Repeat / Grave-Escape → one-tap tiles.** 1U keycap tiles in a
+  2-column block on the Basic tab, with None / Transparent pinned to the bottom
+  row; labels wrap at the largest font that fits a 1U cap.
+- **Supporting:** `isParamTileable` ([`tiles.ts`](../../src/behaviors/tiles.ts))
+  detects the single-key-param shape (callers gate `!isCoreBinding`, since Key
+  Press shares it). [`keymap-parser.ts`](../../src/keymap-parser.ts) gained the
+  missing `kt` alias and a `gresc` → `Grave/Escape` fix so the slot code label
+  renders `&kt` / `&gresc`. The demo fixtures expose all three new behaviors.
 
 - **Risk:** medium — mostly UI; reuses the grid/tile patterns from
   [`HidUsagePicker.tsx`](../../src/behaviors/HidUsagePicker.tsx). Capability-aware:
-  a tab/tile renders only for behaviors the firmware exposes.
+  a tab/tile/latch renders only for behaviors the firmware exposes.
 
 ### Step 4 — layer in the Normal slot (To / Toggle / Sticky) + custom hold-tap
 
@@ -702,12 +730,17 @@ behavior は「実際にいくつ枠を持つか」で形が分かれる。見�
 - **None / Transparent** — 全タブ常設の「空にする／透過」タイル（= Step 1）。
 - **Caps Word / Key Repeat / Grave-Escape** — param なし単発タイル。
 
-### (c) パラメータ付きタイル — 1 タイル＋param 1 つ
+### (c) キー状態ラッチ — Normal キーを包む（`&sk` / `&kt`）
 
 `&sk`（sticky key）と `&kt`（key toggle）はキー/修飾 param を 1 つ取るので「1 タイル
-＝完成」では**ない**: タイルを押した後にキー選択が要る。タイルを押すと単一キー
-ピッカーが現れる形（＝スロット面の「タップのみ」退化形）でモデル化する。タイル選択型
-に入れるのはカテゴリ誤り。（小物 behavior の挙動は付録参照。）
+＝完成」では**ない**: 当初案は「タイルを押すと単一キーピッカー」だったが、**実装
+（Step 3b）はキー状態ラッチに変更**。これらは「キーである」より「キーを包む」もの
+（"+ Send with" の暗黙修飾が Normal キーを包むのと同類）なので、**スロットラベル上の
+チェックボックス対**（`Latch: ☐ Sticky Key ☐ Key Toggle`）として出す。チェックすると
+現在の Normal キーが `&sk <key>` / `&kt <key>` になり、キー自体は通常どおりグリッドで
+選ぶ。両者は排他、Hold mode 中は無効（hold-tap はラッチ不可）。逆にラッチ中はグリッドが
+**キー専用**（whole-binding のタブ/タイルは無効、None / Transparent は生存）。（小物
+behavior の挙動は付録参照。）
 
 ### (b) スロット型 — 2 枠、behavior は §2 で派生
 
@@ -839,7 +872,12 @@ behavior は「実際にいくつ枠を持つか」で形が分かれる。見�
     したので冗長な「KEY」ラベルを廃し、**検索ボックスを「NORMAL」行へ移設**（節見出しは
     NORMAL が兼ねる）。`HidUsagePicker` に `inline` ＋ controlled `search`/`onSearchChange`。
     ④タイルはキーキャップ風に文字サイズ統一、セクション見出しを `text-sm` に。
-  - **3b** — `&sk` / `&kt` をパラメータ付きタイル（shape (c)）に。Basic チップ列を畳む。
+  - **3b（出荷済み・PR #32）** — `&sk` / `&kt` をキー状態ラッチ（§3c）に。スロット
+    ラベル上の `Latch` チェックボックス対で Normal キーを包む（`&kp K`→`&sk K`/`&kt K`、
+    キーはグリッドで選ぶ）。Hold と排他、ラッチ中はグリッドがキー専用。Caps Word /
+    Key Repeat / Grave-Escape は Basic タブの単発タイル（2 列、最下段に None/Transparent）。
+    付随して keymap-parser に `kt` 別名追加＋`gresc`→`Grave/Escape` 修正、fixtures に 3
+    behavior 追加。残置 Basic チップ列は消滅。
   - `HidUsagePicker` のグリッド/タイル型を再利用。capability 連動。
 - **Step 4（逆引きラベル）** — スロット面に「いまの組み合わせ＝◯◯」の控えめ表示、
   レイヤーサブモード（to/tog/sl）、カスタム hold-tap の identity 選択（§3b）。
