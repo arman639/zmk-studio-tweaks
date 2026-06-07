@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
 import { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
@@ -197,13 +197,22 @@ export const BehaviorBindingPicker = ({
   // single-key ones (Sticky Key / Key Toggle) are key-state latches on the slot
   // surface. (Key Press also has the single-key shape but is a hidden core
   // behavior, so hiddenIds already excludes it.)
-  const isBasicFinishedTile = (b: GetBehaviorDetailsResponse) =>
-    classifyBehavior(b) === "Basic" && !hiddenIds.has(b.id) && isTileable(b);
-  const isBasicWrapper = (b: GetBehaviorDetailsResponse) =>
-    classifyBehavior(b) === "Basic" &&
-    !hiddenIds.has(b.id) &&
-    !isTileable(b) &&
-    isParamTileable(b);
+  // Memoized so they're stable deps for the grouping memos below (they only
+  // change with hiddenIds), keeping react-hooks/exhaustive-deps satisfied
+  // without re-running the memos every render.
+  const isBasicFinishedTile = useCallback(
+    (b: GetBehaviorDetailsResponse) =>
+      classifyBehavior(b) === "Basic" && !hiddenIds.has(b.id) && isTileable(b),
+    [hiddenIds]
+  );
+  const isBasicWrapper = useCallback(
+    (b: GetBehaviorDetailsResponse) =>
+      classifyBehavior(b) === "Basic" &&
+      !hiddenIds.has(b.id) &&
+      !isTileable(b) &&
+      isParamTileable(b),
+    [hiddenIds]
+  );
 
   // Flat category map for the residual "More behaviors" area. None / Transparent
   // surface as keycap tiles in the key grid, the four core behaviors live on the
@@ -220,7 +229,7 @@ export const BehaviorBindingPicker = ({
       out[group].push(b);
     }
     return out;
-  }, [sortedBehaviors, hiddenIds]);
+  }, [sortedBehaviors, hiddenIds, isBasicFinishedTile, isBasicWrapper]);
 
   // The whole-binding behavior tabs for the Normal strip: Mouse, then a
   // consolidated System (Bluetooth / Output / External Power / System), each a
@@ -253,7 +262,7 @@ export const BehaviorBindingPicker = ({
       if (isBasicFinishedTile(b)) out.push(...(tileBindingsFor(b) ?? []));
     }
     return out;
-  }, [sortedBehaviors, hiddenIds]);
+  }, [sortedBehaviors, isBasicFinishedTile]);
 
   // Key-state latch behaviors (Sticky Key / Key Toggle) the firmware exposes,
   // offered as toggles on the slot surface that wrap the Normal key.
@@ -263,7 +272,7 @@ export const BehaviorBindingPicker = ({
       if (isBasicWrapper(b)) out.push({ id: b.id, label: b.displayName });
     }
     return out;
-  }, [sortedBehaviors, hiddenIds]);
+  }, [sortedBehaviors, isBasicWrapper]);
 
   const currentBehavior = behaviors.find((b) => b.id === behaviorId);
   const currentGroup = currentBehavior
