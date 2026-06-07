@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
 
-import { isTileable, tileBindingsFor } from "./tiles";
+import { isParamTileable, isTileable, tileBindingsFor } from "./tiles";
+
+const HID = { keyboardMax: 0xffff, consumerMax: 0xffff };
 
 const behavior = (
   id: number,
@@ -105,5 +107,51 @@ describe("tileBindingsFor", () => {
 
   it("reports tile-able behaviors via isTileable", () => {
     expect(isTileable(behavior(11, "Reset", []))).toBe(true);
+  });
+});
+
+describe("isParamTileable (key-state latch behaviors: Sticky Key / Key Toggle)", () => {
+  const sk = behavior(2, "Sticky Key", [
+    { param1: [{ name: "key", hidUsage: HID }], param2: [] },
+  ]);
+  const kt = behavior(5, "Key Toggle", [
+    { param1: [{ name: "key", hidUsage: HID }], param2: [] },
+  ]);
+
+  it("is true for a single-key-param behavior", () => {
+    expect(isParamTileable(sk)).toBe(true);
+    expect(isParamTileable(kt)).toBe(true);
+  });
+
+  it("is false for a parameterless behavior (Caps Word / Reset)", () => {
+    expect(isParamTileable(behavior(3, "Caps Word", [{ param1: [], param2: [] }]))).toBe(false);
+    expect(isParamTileable(behavior(11, "Reset", []))).toBe(false);
+  });
+
+  it("is false for a layer param (To Layer)", () => {
+    const toLayer = behavior(8, "To Layer", [
+      { param1: [{ name: "layer", layerId: {} }], param2: [] },
+    ]);
+    expect(isParamTileable(toLayer)).toBe(false);
+  });
+
+  it("is shape-based: Key Press shares the lone-key shape and reports true", () => {
+    // Key Press has the same single-HID-key shape as Sticky Key, so the shape
+    // test alone can't tell them apart — callers must gate the slot-model core
+    // behaviors (Key Press is edited via the slots, not as a latch).
+    const keyPress = behavior(1, "Key Press", [
+      { param1: [{ name: "key", hidUsage: HID }], param2: [] },
+    ]);
+    expect(isParamTileable(keyPress)).toBe(true);
+  });
+
+  it("is false for a two-param hold-tap (Mod-Tap): not a lone key param", () => {
+    const mt = behavior(10, "Mod-Tap", [
+      {
+        param1: [{ name: "mod", hidUsage: HID }],
+        param2: [{ name: "tap", hidUsage: HID }],
+      },
+    ]);
+    expect(isParamTileable(mt)).toBe(false);
   });
 });

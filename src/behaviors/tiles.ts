@@ -129,3 +129,18 @@ export function tileBindingsFor(
 export function isTileable(behavior: GetBehaviorDetailsResponse): boolean {
   return tileBindingsFor(behavior) !== null;
 }
+
+/**
+ * Whether a behavior takes exactly one HID-key parameter and nothing else
+ * (Sticky Key, Key Toggle). Such a behavior wraps a single key, so the slot
+ * surface offers it as a *key-state latch* applied to the Normal key (design
+ * §3c) rather than a tile. Note Key Press shares this shape; callers that want
+ * only the latch behaviors must exclude the slot-model core behaviors.
+ */
+export function isParamTileable(behavior: GetBehaviorDetailsResponse): boolean {
+  const sets = behavior.metadata;
+  if (!sets || sets.length !== 1) return false;
+  const p1 = sets[0].param1 ?? [];
+  const p2 = sets[0].param2 ?? [];
+  return p1.length === 1 && !!p1[0].hidUsage && p2.length === 0;
+}

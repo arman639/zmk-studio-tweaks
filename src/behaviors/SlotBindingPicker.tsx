@@ -9,7 +9,7 @@ import { Search } from "lucide-react";
 import { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 
 import { ClearTilesConfig, HidUsagePicker } from "./HidUsagePicker";
-import { BindingTileTab } from "./tiles";
+import { BehaviorTile, BindingTileTab } from "./tiles";
 import {
   bindingToSlots,
   CORE_LABELS,
@@ -42,6 +42,19 @@ export interface SlotBindingPickerProps {
    * (issue #16, Step 3). Selecting one calls {@link onBindingChanged}.
    */
   behaviorTabs?: BindingTileTab[];
+  /**
+   * One-tap "flavor" behaviors (Caps Word / Key Repeat / Grave-Escape) shown as
+   * a column inside the Normal grid's Basic tab — picked the same way a key is
+   * (issue #16, Step 3b). Selecting one calls {@link onBindingChanged}.
+   */
+  basicBehaviorTiles?: BehaviorTile[];
+  /**
+   * Key-state latch behaviors (Sticky Key / Key Toggle) the firmware exposes.
+   * Shown as toggles below Send With: they wrap the Normal key (`&kp K` → `&sk K`
+   * / `&kt K`), so the affected key is still picked from the normal grid
+   * (issue #16, Step 3b). Empty/omitted when the firmware exposes neither.
+   */
+  keyStateWrappers?: { id: number; label: string }[];
   /**
    * Display name of the current behavior when it is *not* a slot-derivable core
    * (e.g. a Mouse / System tile). Shown in the reverse-lookup label instead of
@@ -101,17 +114,31 @@ export const SlotBindingPicker = ({
   onBindingChanged,
   clearTiles,
   behaviorTabs,
+  basicBehaviorTiles,
+  keyStateWrappers,
   currentBehaviorName,
   bindingCode,
 }: SlotBindingPickerProps) => {
   const slots = bindingToSlots(binding, registry) ?? EMPTY_SLOTS;
   const layout = useHostLayout();
 
+  // Sticky Key / Key Toggle "latch" the Normal key: the binding is the wrapper
+  // behavior with the key as its single param. They sit outside the core slot
+  // model, so detect them by id and read/write the key directly.
+  const currentWrapper =
+    (keyStateWrappers ?? []).find((w) => w.id === binding.behaviorId) ?? null;
+  // The Normal key being edited, whichever shape currently holds it: the wrapper
+  // param, or the core slot's tap (kp param1, mt/lt tap key).
+  const normalKey = currentWrapper
+    ? binding.param1 || undefined
+    : slots.tap.kind === "key"
+      ? slots.tap.usage
+      : undefined;
+
   // Search for the Normal key grid is hosted here (on the NORMAL header row) and
   // fed to the grid, so the grid drops its own "Key" header.
   const [search, setSearch] = useState("");
 
-  const tapFilled = slots.tap.kind === "key";
   const holdFilled = slots.hold.kind !== "empty";
 
   // Normal is always shown — every key has a Normal action, and None is a value
@@ -141,11 +168,23 @@ export const SlotBindingPicker = ({
     if (derived) onBindingChanged(derived);
   };
 
-  const setNormalKey = (usage?: number) =>
+  // Picking a key from the grid sets the Normal key. When a latch (Sticky Key /
+  // Key Toggle) is active, the key is the wrapper's param so the latch is kept;
+  // otherwise it flows through the core slot model (→ &kp / &mt / ...).
+  const setNormalKey = (usage?: number) => {
+    if (currentWrapper) {
+      onBindingChanged({
+        behaviorId: currentWrapper.id,
+        param1: usage ?? 0,
+        param2: 0,
+      });
+      return;
+    }
     writeSlots({
       ...slots,
       tap: usage === undefined ? { kind: "empty" } : { kind: "key", usage },
     });
+  };
 
   const setHold = (hold: HoldSlot) => writeSlots({ ...slots, hold });
 
@@ -163,6 +202,20 @@ export const SlotBindingPicker = ({
     const bits = modBits ^ bit;
     const usage = usageFromModifierSet(bits);
     setHold(usage === 0 ? { kind: "empty" } : { kind: "mod", usage });
+  };
+
+  // Toggling a key-state latch (Sticky Key / Key Toggle) wraps or unwraps the
+  // current Normal key. Re-toggling the active latch unwraps back to a plain
+  // &kp (or &none if no key is set yet); the latches are mutually exclusive.
+  const toggleWrapper = (w: { id: number; label: string }) => {
+    if (currentWrapper?.id === w.id) {
+      writeSlots({
+        tap: normalKey !== undefined ? { kind: "key", usage: normalKey } : { kind: "empty" },
+        hold: { kind: "empty" },
+      });
+    } else {
+      onBindingChanged({ behaviorId: w.id, param1: normalKey ?? 0, param2: 0 });
+    }
   };
 
   const derivedName = (() => {
@@ -202,19 +255,64 @@ export const SlotBindingPicker = ({
             {bindingCode}
           </code>
         )}
+
+        {/* Key-state latch (Sticky Key / Key Toggle) wraps the Normal key (→ &sk
+            / &kt); it's rare and mutually exclusive with Hold mode, so it lives
+            here as a compact control rather than in the slot surface. The key is
+            still picked from the grid below. Disabled while Hold mode is on. */}
+        {keyStateWrappers && keyStateWrappers.length > 0 && (
+          <div
+            className="ml-auto flex items-center gap-3"
+            role="group"
+            aria-label="Key state latch"
+          >
+            <span className="text-xs uppercase tracking-widest font-bold text-primary">
+              Latch
+            </span>
+            {keyStateWrappers.map((w) => {
+              const active = currentWrapper?.id === w.id;
+              const disabled = holdOpen && !active;
+              return (
+                <label
+                  key={w.id}
+                  className={`flex items-center gap-1.5 select-none text-sm ${
+                    disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={active}
+                    disabled={disabled}
+                    onChange={() => toggleWrapper(w)}
+                    className="w-4 h-4 accent-primary cursor-pointer disabled:cursor-not-allowed"
+                  />
+                  {w.label}
+                </label>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Normal (always shown — the key's base action) and an optional Hold mode
           (a different action when held). Only Hold mode has an on/off toggle: a
           plain &kp reads as Normal-only, a &mo as Hold-mode-only. */}
       <div className="flex gap-3">
+        {/* Hold mode adds a different action when held (→ &mt / &lt / &mo). A
+            key-state latch (Sticky Key / Key Toggle) has no hold half, so the
+            toggle is disabled while a latch is active. */}
         <div className="w-52 shrink-0 flex flex-col gap-2 border-r pr-3">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+          <label
+            className={`flex items-center gap-2 select-none ${
+              currentWrapper ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+            }`}
+          >
             <input
               type="checkbox"
               checked={holdOpen}
               onChange={toggleHoldMode}
-              className="w-4 h-4 accent-primary cursor-pointer"
+              disabled={!!currentWrapper}
+              className="w-4 h-4 accent-primary cursor-pointer disabled:cursor-not-allowed"
               aria-label="Hold mode"
             />
             <span className={slotLabelClass}>Hold mode</span>
@@ -294,7 +392,9 @@ export const SlotBindingPicker = ({
             </>
           ) : (
             <p className={helpClass}>
-              A different action while held — a modifier or layer.
+              {currentWrapper
+                ? `A ${currentWrapper.label} latches a key — it has no hold.`
+                : "A different action while held — a modifier or layer."}
             </p>
           )}
         </div>
@@ -302,8 +402,14 @@ export const SlotBindingPicker = ({
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <span className={slotLabelClass}>Normal</span>
-            {tapFilled ? (
-              <span className="text-sm font-medium">{tapLabel(slots.tap, layout)}</span>
+            {normalKey !== undefined ? (
+              <span className="text-sm font-medium">
+                {tapLabel({ kind: "key", usage: normalKey }, layout)}
+              </span>
+            ) : currentWrapper ? (
+              <span className={helpClass}>
+                Pick the key to {currentWrapper.label.toLowerCase()}.
+              </span>
             ) : (
               <span className={helpClass}>The key sent on a normal press.</span>
             )}
@@ -322,13 +428,15 @@ export const SlotBindingPicker = ({
 
           <HidUsagePicker
             label="Normal key"
-            value={slots.tap.kind === "key" ? slots.tap.usage : undefined}
+            value={normalKey}
             usagePages={TAP_USAGE_PAGES}
             onValueChanged={setNormalKey}
             clearTiles={clearTiles}
             extraTabs={behaviorTabs}
+            basicBehaviorTiles={basicBehaviorTiles}
             activeBinding={binding}
             onSelectBinding={onBindingChanged}
+            keyOnly={!!currentWrapper}
             inline
             search={search}
             onSearchChange={setSearch}
