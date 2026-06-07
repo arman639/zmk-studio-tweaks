@@ -1,8 +1,11 @@
 import {
   BehaviorParameterValueDescription,
   BehaviorBindingParametersSet,
+  GetBehaviorDetailsResponse,
 } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
+import { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import { hid_usage_page_and_id_from_usage } from "../hid-usages";
+import { dtsRefForDisplayName, formatBindingParam } from "../keymap-parser";
 
 export function validateValue(
   layerIds: number[],
@@ -62,4 +65,41 @@ export function validateBinding(
   }
 
   return validateValue(layerIds, param2, matchingSet.param2);
+}
+
+/**
+ * Render a binding as the ZMK devicetree code a keymap author would write, e.g.
+ * `&mt LSHFT RET`, `&kp A`, `&mo 1`, `&bt BT_SEL 0`, `&reset`. The behavior
+ * reference comes from the displayName ({@link dtsRefForDisplayName}); each
+ * parameter prefers its metadata constant name (the ZMK macro, e.g. `BT_SEL`)
+ * and otherwise falls back to a keycode name / layer index
+ * ({@link formatBindingParam}). Only the parameters the matching metadata set
+ * actually defines are emitted, so a no-param behavior renders bare.
+ */
+export function formatBinding(
+  binding: BehaviorBinding,
+  behavior: GetBehaviorDetailsResponse | undefined,
+  layerIds: number[]
+): string {
+  if (!behavior) return "";
+  const ref = `&${dtsRefForDisplayName(behavior.displayName)}`;
+  const sets = behavior.metadata ?? [];
+  if (sets.length === 0) return ref;
+
+  // No matching set → the binding's param1 fits none of the behavior's shapes;
+  // emit just the reference rather than risk showing a param2 from a set that
+  // doesn't actually apply.
+  const set = sets.find((s) =>
+    validateValue(layerIds, binding.param1, s.param1)
+  );
+  if (!set) return ref;
+  const fmt = (
+    value: number,
+    descs: BehaviorParameterValueDescription[] | undefined
+  ) => descs?.find((d) => d.constant === value)?.name ?? formatBindingParam(value);
+
+  const parts = [ref];
+  if (set.param1 && set.param1.length > 0) parts.push(fmt(binding.param1, set.param1));
+  if (set.param2 && set.param2.length > 0) parts.push(fmt(binding.param2, set.param2));
+  return parts.join(" ");
 }

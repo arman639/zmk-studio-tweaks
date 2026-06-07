@@ -37,6 +37,15 @@ const layerParam = (name: string): BehaviorParameterValueDescription => ({
   name,
   layerId: {},
 });
+const constParam = (
+  name: string,
+  constant: number
+): BehaviorParameterValueDescription => ({ name, constant });
+const rangeParam = (
+  name: string,
+  min: number,
+  max: number
+): BehaviorParameterValueDescription => ({ name, range: { min, max } });
 
 // Behavior ids are arbitrary stable handles, exactly as a real device reports
 // them. displayName matches the names the picker classifies on
@@ -54,6 +63,13 @@ const B = {
   modTap: 10,
   reset: 11,
   bootloader: 12,
+  studioUnlock: 13,
+  bluetooth: 14,
+  outputSel: 15,
+  extPower: 16,
+  mouseKeyPress: 17,
+  mouseMove: 18,
+  mouseScroll: 19,
 } as const;
 
 const BEHAVIORS: GetBehaviorDetailsResponse[] = [
@@ -69,6 +85,93 @@ const BEHAVIORS: GetBehaviorDetailsResponse[] = [
   { id: B.modTap, displayName: "Mod-Tap", metadata: [{ param1: [hidParam("mod")], param2: [hidParam("tap")] }] },
   { id: B.reset, displayName: "Reset", metadata: [] },
   { id: B.bootloader, displayName: "Bootloader", metadata: [] },
+  { id: B.studioUnlock, displayName: "Studio Unlock", metadata: [] },
+  // Single-action tile behaviors (Step 3a). Metadata shapes mirror what a real
+  // keyboard reports: a list of (param1, param2) sets, each with constant or
+  // range values the tile grid explodes into one finished binding per value.
+  {
+    id: B.bluetooth,
+    displayName: "Bluetooth",
+    metadata: [
+      { param1: [constParam("BT_CLR", 0)], param2: [] },
+      { param1: [constParam("BT_CLR_ALL", 1)], param2: [] },
+      { param1: [constParam("BT_NXT", 2)], param2: [] },
+      { param1: [constParam("BT_PRV", 3)], param2: [] },
+      { param1: [constParam("BT_SEL", 4)], param2: [rangeParam("profile", 0, 4)] },
+    ],
+  },
+  {
+    id: B.outputSel,
+    displayName: "Output Selection",
+    metadata: [
+      {
+        param1: [
+          constParam("OUT_USB", 0),
+          constParam("OUT_BLE", 1),
+          constParam("OUT_TOG", 2),
+        ],
+        param2: [],
+      },
+    ],
+  },
+  {
+    id: B.extPower,
+    displayName: "External Power",
+    metadata: [
+      {
+        param1: [
+          constParam("EP_OFF", 0),
+          constParam("EP_ON", 1),
+          constParam("EP_TOG", 2),
+        ],
+        param2: [],
+      },
+    ],
+  },
+  {
+    id: B.mouseKeyPress,
+    displayName: "Mouse Key Press",
+    metadata: [
+      {
+        param1: [
+          constParam("LCLK", 1),
+          constParam("RCLK", 2),
+          constParam("MCLK", 4),
+        ],
+        param2: [],
+      },
+    ],
+  },
+  {
+    id: B.mouseMove,
+    displayName: "Mouse Move",
+    metadata: [
+      {
+        param1: [
+          constParam("UP", 0),
+          constParam("DOWN", 1),
+          constParam("LEFT", 2),
+          constParam("RIGHT", 3),
+        ],
+        param2: [],
+      },
+    ],
+  },
+  {
+    id: B.mouseScroll,
+    displayName: "Mouse Scroll",
+    metadata: [
+      {
+        param1: [
+          constParam("UP", 0),
+          constParam("DOWN", 1),
+          constParam("LEFT", 2),
+          constParam("RIGHT", 3),
+        ],
+        param2: [],
+      },
+    ],
+  },
 ];
 
 // --- binding builders ------------------------------------------------------
