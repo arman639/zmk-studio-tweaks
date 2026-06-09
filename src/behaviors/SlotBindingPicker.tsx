@@ -54,11 +54,11 @@ export interface SlotBindingPickerProps {
    */
   behaviorTabs?: BindingTileTab[];
   /**
-   * One-tap "flavor" behaviors (Caps Word / Key Repeat / Grave-Escape) shown as
-   * a column inside the Normal grid's Basic tab — picked the same way a key is
-   * (issue #16, Step 3b). Selecting one calls {@link onBindingChanged}.
+   * Rarely-used one-tap "flavor" behaviors (Caps Word / Key Repeat / Grave-
+   * Escape) shown in the Normal grid's Apps/Media/Special tab (issue #16).
+   * Selecting one calls {@link onBindingChanged}.
    */
-  basicBehaviorTiles?: BehaviorTile[];
+  specialTiles?: BehaviorTile[];
   /**
    * The key-family latch ids: a base (`&kp`) the latch wraps into Sticky (`&sk`)
    * or Toggle (`&kt`). Shown as a generic "Sticky / Toggle" pair on the slot
@@ -131,7 +131,7 @@ export const SlotBindingPicker = ({
   onBindingChanged,
   clearTiles,
   behaviorTabs,
-  basicBehaviorTiles,
+  specialTiles,
   keyLatch,
   layerLatch,
   currentBehaviorName,
@@ -497,7 +497,7 @@ export const SlotBindingPicker = ({
             onValueChanged={setNormalKey}
             clearTiles={clearTiles}
             extraTabs={behaviorTabs}
-            basicBehaviorTiles={basicBehaviorTiles}
+            specialTiles={specialTiles}
             activeBinding={binding}
             onSelectBinding={handleSelectBinding}
             keyOnly={keyLatched}

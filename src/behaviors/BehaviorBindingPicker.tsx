@@ -319,9 +319,10 @@ export const BehaviorBindingPicker = ({
     return tabs;
   }, [sortedBehaviors, hiddenIds, layers, layerLatch]);
 
-  // The Basic-tab one-tap flavor tiles (Caps Word / Key Repeat / Grave-Escape),
-  // one finished binding each. Capability-aware — only firmware-exposed ones.
-  const basicBehaviorTiles = useMemo<BehaviorTile[]>(() => {
+  // The rarely-used one-tap flavor tiles (Caps Word / Key Repeat / Grave-Escape),
+  // one finished binding each, appended into the Apps/Media/Special tab.
+  // Capability-aware — only firmware-exposed ones.
+  const specialTiles = useMemo<BehaviorTile[]>(() => {
     const out: BehaviorTile[] = [];
     for (const b of sortedBehaviors) {
       if (isBasicFinishedTile(b)) out.push(...(tileBindingsFor(b) ?? []));
@@ -517,7 +518,7 @@ export const BehaviorBindingPicker = ({
         onBindingChanged={setBindingFromSlots}
         clearTiles={clearTiles}
         behaviorTabs={behaviorTabs}
-        basicBehaviorTiles={basicBehaviorTiles}
+        specialTiles={specialTiles}
         keyLatch={keyLatch}
         layerLatch={layerLatch}
         currentBehaviorName={currentBehavior?.displayName}
