@@ -190,10 +190,11 @@ are to a layer. Ticking carries the bound value (the key, or the layer) in
 `param1`; the value itself is still picked from the Normal grid (key) or the Layer
 tab (layer). The two are mutually exclusive and disabled while Hold mode is on (a
 hold-tap can't also be latched). For a *key* latch the grid goes **key-only**
-(whole-binding tabs/tiles grey out, but None / Transparent stay live); a *layer*
-latch leaves the Layer tab live so the layer can be re-picked. Calling these
-tile-select would be a category error. (See the appendix for what these flavor
-behaviors actually do.)
+(Mouse / System tabs and the flavor tiles grey out, but None / Transparent and
+the **Layer tab** stay live — a layer is a valid latch target, so picking one
+retargets the latch from the key to that layer, keeping Sticky/Toggle). Calling
+these tile-select would be a category error. (See the appendix for what these
+flavor behaviors actually do.)
 
 ### (b) Slot-fill — two slots, behavior derived per §2
 

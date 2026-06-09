@@ -747,8 +747,10 @@ const HidUsageGrid = ({
           matchFamily.includes(activeBinding.behaviorId) &&
           tile.binding.param1 === activeBinding.param1));
     const onPress = () => onSelectBinding?.(tile.binding);
-    // A whole-binding tile can't be picked while the grid is key-only (latched).
-    const disabled = keyOnly;
+    // While a key latch is active the grid is key-only, so whole-binding tiles
+    // are disabled — except a latch *target* family (the Layer tab, which carries
+    // matchFamily): a layer is a valid thing to latch, so it stays pickable.
+    const disabled = keyOnly && !matchFamily;
     // The column variant is a 1U-wide cap whose height grows so long labels wrap
     // (e.g. "Grave/Escape" → two lines), at the largest font a 6-char word still
     // fits the 1U width without breaking mid-word (~13px; text-sm/14px overflows).
@@ -836,7 +838,11 @@ const HidUsageGrid = ({
       className="flex flex-col"
       selectedKey={activeTab ?? BASIC_TAB_ID}
       onSelectionChange={(k) => onTabChange(k as string)}
-      disabledKeys={keyOnly ? extraTabNames : []}
+      disabledKeys={
+        keyOnly
+          ? (extraTabs ?? []).filter((t) => !t.matchFamily).map((t) => t.name)
+          : []
+      }
     >
       <TabList className="flex border-b">
         {allTabs.map((category) => (

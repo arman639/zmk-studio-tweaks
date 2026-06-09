@@ -264,6 +264,20 @@ export const SlotBindingPicker = ({
       onBindingChanged({ behaviorId: targetId, param1: latchParam, param2: 0 });
   };
 
+  // Picking a To-Layer tile (from the Layer tab) while a latch is active keeps
+  // the latch and retargets it to that layer (&to -> &sl/&tog) — so switching a
+  // key latch onto a layer preserves the Sticky/Toggle choice. Other behavior
+  // tiles (Mouse / System) pass through unchanged.
+  const handleSelectBinding = (b: BehaviorBinding) => {
+    if (layerLatch && b.behaviorId === layerLatch.base) {
+      if (isSticky && layerLatch.sticky !== undefined)
+        return onBindingChanged({ behaviorId: layerLatch.sticky, param1: b.param1, param2: 0 });
+      if (isToggle && layerLatch.toggle !== undefined)
+        return onBindingChanged({ behaviorId: layerLatch.toggle, param1: b.param1, param2: 0 });
+    }
+    onBindingChanged(b);
+  };
+
   // The generic Sticky / Toggle checkboxes — only those the current family
   // actually exposes (capability-aware).
   const latchOptions: { variant: "sticky" | "toggle"; label: string; active: boolean }[] = [];
@@ -485,7 +499,7 @@ export const SlotBindingPicker = ({
             extraTabs={behaviorTabs}
             basicBehaviorTiles={basicBehaviorTiles}
             activeBinding={binding}
-            onSelectBinding={onBindingChanged}
+            onSelectBinding={handleSelectBinding}
             keyOnly={keyLatched}
             inline
             search={search}
