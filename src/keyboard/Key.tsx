@@ -21,6 +21,17 @@ interface BehaviorShortName {
 const MAX_HEADER_LENGTH = 9;
 const shortNames: Record<string, BehaviorShortName> = BehaviorShortNames;
 
+// A paramless behavior's name is its whole legend; size it down by length so it
+// stays clearly under a plain keycode legend and within a 1U cap: <=4 chars
+// (▽ / None / Caps / Boot) 14px, 5-6 (Reset / Repeat / Unlock) 12px, 7+
+// (Grv/Esc / SoftOff) 10px. Explicit px (not text-xs/sm): this project overrides
+// theme.fontSize to only `xs: 0.4rem`, so the named steps aren't reliable px.
+const legendSizeClass = (label: string): string => {
+  if (label.length <= 4) return "text-[14px]";
+  if (label.length <= 6) return "text-[12px]";
+  return "text-[10px]";
+};
+
 const shortenHeader = (header: string | undefined) => {
   if(typeof header === "undefined"){
     return "";
@@ -84,14 +95,14 @@ export const Key = ({
         }`}
       >
         {headerIsLegend ? (
-          // A single glyph (e.g. Transparent's ▽) reads at a normal size; a
-          // multi-letter behavior name is set smaller than a keycode legend so it
-          // never competes with a plain letter key. (None resolves to "" — a
-          // deliberately blank cap — so it isn't a legend at all.)
+          // A single glyph (e.g. Transparent's ▽) is a small, unobtrusive marker;
+          // a multi-letter behavior name reads a touch larger but still under a
+          // plain keycode legend. (None resolves to "" — a deliberately blank cap
+          // — so it isn't a legend at all.)
           <span
-            className={`${
-              shortHeader.length <= 1 ? "text-base" : "text-xs"
-            } leading-tight text-center px-0.5 break-words max-w-full`}
+            className={`${legendSizeClass(
+              shortHeader
+            )} leading-tight text-center px-0.5 break-words max-w-full`}
           >
             {shortHeader}
           </span>
