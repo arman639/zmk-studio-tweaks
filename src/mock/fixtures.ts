@@ -73,6 +73,7 @@ const B = {
   keyToggle: 20,
   keyRepeat: 21,
   graveEscape: 22,
+  stickyLayer: 23,
 } as const;
 
 const BEHAVIORS: GetBehaviorDetailsResponse[] = [
@@ -88,6 +89,7 @@ const BEHAVIORS: GetBehaviorDetailsResponse[] = [
   { id: B.layerTap, displayName: "Layer-Tap", metadata: [{ param1: [layerParam("layer")], param2: [hidParam("tap")] }] },
   { id: B.toLayer, displayName: "To Layer", metadata: [{ param1: [layerParam("layer")], param2: [] }] },
   { id: B.toggleLayer, displayName: "Toggle Layer", metadata: [{ param1: [layerParam("layer")], param2: [] }] },
+  { id: B.stickyLayer, displayName: "Sticky Layer", metadata: [{ param1: [layerParam("layer")], param2: [] }] },
   { id: B.modTap, displayName: "Mod-Tap", metadata: [{ param1: [hidParam("mod")], param2: [hidParam("tap")] }] },
   { id: B.reset, displayName: "Reset", metadata: [] },
   { id: B.bootloader, displayName: "Bootloader", metadata: [] },

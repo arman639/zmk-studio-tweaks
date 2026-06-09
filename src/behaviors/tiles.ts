@@ -144,3 +144,35 @@ export function isParamTileable(behavior: GetBehaviorDetailsResponse): boolean {
   const p2 = sets[0].param2 ?? [];
   return p1.length === 1 && !!p1[0].hidUsage && p2.length === 0;
 }
+
+/**
+ * Whether a behavior takes exactly one layer parameter and nothing else: the
+ * persistent layer switches To / Toggle / Sticky Layer (also Momentary Layer,
+ * which the caller excludes as a slot-model core). Such a behavior is a finished
+ * binding once a layer is chosen, so it's exploded into one tile per layer
+ * (issue #16, Step 4 — the Normal grid's "Layer" tab).
+ */
+export function isLayerTileable(behavior: GetBehaviorDetailsResponse): boolean {
+  const sets = behavior.metadata;
+  if (!sets || sets.length !== 1) return false;
+  const p1 = sets[0].param1 ?? [];
+  const p2 = sets[0].param2 ?? [];
+  return p1.length === 1 && !!p1[0].layerId && p2.length === 0;
+}
+
+/**
+ * Expand a single-layer-param behavior into one finished tile per layer, or
+ * `null` when it isn't that shape. The tile label is the layer's name (falling
+ * back to its index); the section heading names the behavior (To / Toggle /
+ * Sticky Layer), so a bare layer name reads unambiguously.
+ */
+export function layerTileBindingsFor(
+  behavior: GetBehaviorDetailsResponse,
+  layers: { id: number; name: string }[]
+): BehaviorTile[] | null {
+  if (!isLayerTileable(behavior)) return null;
+  return layers.map((l, i) => ({
+    label: l.name || i.toString(),
+    binding: { behaviorId: behavior.id, param1: l.id, param2: 0 },
+  }));
+}

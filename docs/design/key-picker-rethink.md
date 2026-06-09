@@ -13,8 +13,8 @@
 > every standard ZMK behavior is verified in §4a. **Step 3b deviated from the
 > original "parameterised tile" idea (§3c): `&sk`/`&kt` shipped as a *key-state
 > latch* — a checkbox pair on the slot label that wraps the Normal key — which
-> fits the "wraps a key, not is a key" nature better than a tile.** Step 4 is
-> next.
+> fits the "wraps a key, not is a key" nature better than a tile.** **Step 4
+> (persistent layer switches as a "Layer" tab) is implemented on its branch (§5).**
 
 ---
 
@@ -485,17 +485,30 @@ The Basic "flavor" behaviors leave the residual chip area entirely, so the
   [`HidUsagePicker.tsx`](../../src/behaviors/HidUsagePicker.tsx). Capability-aware:
   a tab/tile/latch renders only for behaviors the firmware exposes.
 
-### Step 4 — layer in the Normal slot (To / Toggle / Sticky) + custom hold-tap
+### Step 4 — persistent layer switches as a "Layer" tab (shipped)
 
-- **Goal:** let the **Normal** slot hold a *layer* (not just a key), which derives
-  the persistent layer switches — `&to` / `&tog` / `&sl` — with a small sub-mode
-  pick (they take one layer param and differ only in latch behavior, §2b). Add the
-  custom-hold-tap identity choice for when more than one hold-tap behavior exists
-  (§3b, default `&mt`). The reverse-lookup label already ships with Step 2.
+- **Goal:** make the persistent layer switches — `&to` / `&tog` / `&sl` —
+  pickable from the Normal surface instead of the residual chips.
+- **As built (deviation from the slot-model framing).** The original plan put a
+  *layer* in the Normal slot and derived `&to`/`&tog`/`&sl` from a sub-mode pick.
+  As shipped, they're a **"Layer" tab in the Normal grid's tab strip** (between
+  *International* and *Mouse*), consistent with the Mouse / System behavior tabs
+  from Step 3a: one labelled section per sub-mode (To Layer / Toggle Layer /
+  Sticky Layer), each **exploded into one tile per layer**. Picking a tile sets
+  the whole binding (`&to <layer>` / …); the reverse-lookup label names it and
+  the tile highlights, and the tab is `keyOnly`-disabled while a latch is active —
+  all reused from the existing behavior-tab machinery, so `slots.ts` is unchanged.
+  [`tiles.ts`](../../src/behaviors/tiles.ts) gains `isLayerTileable` /
+  `layerTileBindingsFor` (unit-tested); the tab is built in
+  [`BehaviorBindingPicker.tsx`](../../src/behaviors/BehaviorBindingPicker.tsx).
 - **Note:** this is the *persistent* layer case; the *momentary* layer (`&mo`) and
-  Layer-Tap (`&lt`) live in **Hold mode** and already land in Step 2. A layer in
-  Normal disables Hold mode (a tap-to-switch has no hold half).
-- **Risk:** low-medium — additive sub-mode selector on the Normal slot.
+  Layer-Tap (`&lt`) live in **Hold mode** and already landed in Step 2. With the
+  tab approach a layer binding is non-core (like a Mouse/System tile), so Hold
+  mode simply reads as off rather than being explicitly disabled.
+- **Deferred:** the custom-hold-tap identity choice (when more than one hold-tap
+  behavior exists, pick `&mt` vs e.g. `homerow_mods`, §3b/§8 Q2) is independent of
+  the layer work and is left to a later step.
+- **Risk:** low — additive tab; reuses the Step 3a behavior-tab patterns.
 
 ### Step 5+ — remove the top-level behavior tabs (later, needs its own design)
 
@@ -879,8 +892,12 @@ behavior の挙動は付録参照。）
     付随して keymap-parser に `kt` 別名追加＋`gresc`→`Grave/Escape` 修正、fixtures に 3
     behavior 追加。残置 Basic チップ列は消滅。
   - `HidUsagePicker` のグリッド/タイル型を再利用。capability 連動。
-- **Step 4（逆引きラベル）** — スロット面に「いまの組み合わせ＝◯◯」の控えめ表示、
-  レイヤーサブモード（to/tog/sl）、カスタム hold-tap の identity 選択（§3b）。
+- **Step 4（実装済み）** — 持続レイヤー切替 `&to`/`&tog`/`&sl` を、当初の「Normal
+  スロットにレイヤー」案ではなく **Normal グリッドのタブ列の「Layer」タブ**として実装
+  （Mouse/System タブと同型）。To/Toggle/Sticky の各セクションをレイヤーごとのタイルに
+  展開し、タイル選択で binding 全体を設定（逆引きラベル・タブ自動ジャンプ・keyOnly
+  無効化は既存機構を再利用、`slots.ts` は無変更）。カスタム hold-tap の identity 選択は
+  独立課題として後続に延期。逆引きラベルは Step 2 で出荷済み。
 - **Step 5 以降（要別設計）** — tier/カテゴリのタブ階層を撤去し「(a)＋(b)＋(c)」へ。
   Step 1-4 で方式が実用検証されてから別途設計。
 

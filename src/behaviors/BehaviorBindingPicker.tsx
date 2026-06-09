@@ -8,9 +8,12 @@ import { formatBinding, validateBinding } from "./parameters";
 import { bindingToSlots, buildDerivationRegistry } from "./slots";
 import {
   BehaviorTile,
+  BindingTileSection,
   BindingTileTab,
+  isLayerTileable,
   isParamTileable,
   isTileable,
+  layerTileBindingsFor,
   tileBindingsFor,
 } from "./tiles";
 
@@ -214,6 +217,18 @@ export const BehaviorBindingPicker = ({
     [hiddenIds]
   );
 
+  // Persistent layer switches (To / Toggle / Sticky Layer) move from the residual
+  // chips onto the Normal grid's "Layer" tab as per-layer tiles (issue #16,
+  // Step 4). Momentary Layer / Layer-Tap share the layer-param shape but are
+  // slot-model cores, so hiddenIds already excludes them.
+  const isLayerTabBehavior = useCallback(
+    (b: GetBehaviorDetailsResponse) =>
+      classifyBehavior(b) === "Layer" &&
+      !hiddenIds.has(b.id) &&
+      isLayerTileable(b),
+    [hiddenIds]
+  );
+
   // Flat category map for the residual "More behaviors" area. None / Transparent
   // surface as keycap tiles in the key grid, the four core behaviors live on the
   // slot surface, and the single-action tile behaviors moved into the Normal
@@ -223,36 +238,53 @@ export const BehaviorBindingPicker = ({
     for (const b of sortedBehaviors) {
       if (hiddenIds.has(b.id)) continue;
       if (isStripBehavior(b)) continue;
-      if (isBasicFinishedTile(b) || isBasicWrapper(b)) continue;
+      if (isBasicFinishedTile(b) || isBasicWrapper(b) || isLayerTabBehavior(b))
+        continue;
       const group = classifyBehavior(b);
       if (!out[group]) out[group] = [];
       out[group].push(b);
     }
     return out;
-  }, [sortedBehaviors, hiddenIds, isBasicFinishedTile, isBasicWrapper]);
+  }, [
+    sortedBehaviors,
+    hiddenIds,
+    isBasicFinishedTile,
+    isBasicWrapper,
+    isLayerTabBehavior,
+  ]);
 
-  // The whole-binding behavior tabs for the Normal strip: Mouse, then a
-  // consolidated System (Bluetooth / Output / External Power / System), each a
-  // run of labelled keycap-tile sections (one per source behavior).
+  // The whole-binding behavior tabs for the Normal strip: a Layer tab (To /
+  // Toggle / Sticky Layer, one tile per layer), then Mouse, then a consolidated
+  // System (Bluetooth / Output / External Power / System), each a run of labelled
+  // keycap-tile sections (one per source behavior).
   const behaviorTabs = useMemo<BindingTileTab[]>(() => {
     const sections: Record<"Mouse" | "System", BindingTileTab["sections"]> = {
       Mouse: [],
       System: [],
     };
+    const layerSections: BindingTileSection[] = [];
     for (const b of sortedBehaviors) {
-      if (hiddenIds.has(b.id) || !isStripBehavior(b)) continue;
-      const tab = STRIP_GROUPS[classifyBehavior(b)];
-      sections[tab].push({
-        heading: b.displayName,
-        tiles: tileBindingsFor(b) ?? [],
-      });
+      if (hiddenIds.has(b.id)) continue;
+      if (isStripBehavior(b)) {
+        const tab = STRIP_GROUPS[classifyBehavior(b)];
+        sections[tab].push({
+          heading: b.displayName,
+          tiles: tileBindingsFor(b) ?? [],
+        });
+      } else if (isLayerTabBehavior(b)) {
+        layerSections.push({
+          heading: b.displayName,
+          tiles: layerTileBindingsFor(b, layers) ?? [],
+        });
+      }
     }
     const tabs: BindingTileTab[] = [];
+    if (layerSections.length) tabs.push({ name: "Layer", sections: layerSections });
     if (sections.Mouse.length) tabs.push({ name: "Mouse", sections: sections.Mouse });
     if (sections.System.length)
       tabs.push({ name: "System", sections: sections.System });
     return tabs;
-  }, [sortedBehaviors, hiddenIds]);
+  }, [sortedBehaviors, hiddenIds, isLayerTabBehavior, layers]);
 
   // The Basic-tab one-tap flavor tiles (Caps Word / Key Repeat / Grave-Escape),
   // one finished binding each. Capability-aware — only firmware-exposed ones.
