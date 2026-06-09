@@ -7,6 +7,10 @@ interface KeyProps {
   height: number;
   oneU: number;
   header?: string;
+  /** When false the binding has no parameter, so the header is the key's whole
+   * legend (None / Transparent / Caps Word / Reset / …) and is rendered centred
+   * like a keycode rather than as a badge pill. */
+  hasParam?: boolean;
   onClick?: () => void;
 }
 
@@ -40,6 +44,7 @@ export const Key = ({
   height,
   oneU,
   header,
+  hasParam = true,
   onClick,
   children,
 }: PropsWithChildren<KeyProps>) => {
@@ -47,6 +52,11 @@ export const Key = ({
   const pixelHeight = height * oneU - 2;
 
   const shortHeader = shortenHeader(header);
+  // A paramless behavior's name *is* the legend: centre it like a keycode rather
+  // than as a badge pill above an (empty) value, so a None / Transparent / Caps
+  // Word / Reset key reads as just another key.
+  const headerIsLegend = !hasParam && !!shortHeader;
+  const showPill = !!shortHeader && !headerIsLegend;
   return (
     <button
       className={`group rounded relative flex justify-center items-center cursor-pointer transition-colors hover:ring-1 hover:ring-gray-300 ${selected ? "bg-primary text-primary-content" : "bg-base-100 text-base-content"
@@ -57,7 +67,7 @@ export const Key = ({
       }}
       onClick={onClick}
     >
-      {shortHeader && (
+      {showPill && (
         <div
           className={`absolute top-0.5 left-1/2 -translate-x-1/2 text-xs leading-none font-bold px-1 py-0 rounded-md border text-nowrap truncate max-w-[96%] ${
             selected
@@ -70,10 +80,24 @@ export const Key = ({
       )}
       <div
         className={`absolute inset-0 flex justify-center ${
-          shortHeader ? "items-start pt-3" : "items-center"
+          showPill ? "items-start pt-3" : "items-center"
         }`}
       >
-        {children}
+        {headerIsLegend ? (
+          // A single glyph (e.g. Transparent's ▽) reads at a normal size; a
+          // multi-letter behavior name is set smaller than a keycode legend so it
+          // never competes with a plain letter key. (None resolves to "" — a
+          // deliberately blank cap — so it isn't a legend at all.)
+          <span
+            className={`${
+              shortHeader.length <= 1 ? "text-base" : "text-xs"
+            } leading-tight text-center px-0.5 break-words max-w-full`}
+          >
+            {shortHeader}
+          </span>
+        ) : (
+          children
+        )}
       </div>
     </button>
   );

@@ -90,6 +90,7 @@ export const Keymap = ({
       return {
         id: `${keymap.layers[selectedLayerIndex].id}-${i}`,
         header: "Unknown",
+        hasParam: false,
         x: k.x / 100.0,
         y: k.y / 100.0,
         width: k.width / 100,
@@ -116,6 +117,10 @@ export const Keymap = ({
     return {
       id: `${keymap.layers[selectedLayerIndex].id}-${i}`,
       header: behavior?.displayName || "Unknown",
+      // A paramless behavior (None / Transparent / Caps Word / Reset / …) has no
+      // value to show, so its name is the key's legend — render it centred like a
+      // keycode rather than as a "behavior badge" pill.
+      hasParam: !!p1 || !!p2,
       x: k.x / 100.0,
       y: k.y / 100.0,
       width: k.width / 100,

@@ -20,5 +20,6 @@
     "Reset": {"short": "Reset"},
     "Soft Off": {"short": "SoftOff"},
     "Studio Unlock": {"short": "Unlock"},
-    "Transparent": {"short": "Trans"}
+    "None": {"short": ""},
+    "Transparent": {"short": "▽"}
 }
