@@ -40,6 +40,14 @@ export interface BindingTileSection {
 export interface BindingTileTab {
   name: string;
   sections: BindingTileSection[];
+  /**
+   * Behavior ids that count as the same "family" as this tab's tiles for the
+   * purpose of highlighting / jumping. The Layer tab's tiles are `&to <layer>`,
+   * but `&sl`/`&tog` (Sticky/Toggle Layer, applied via the latch) should still
+   * light up their layer's tile — so the tab lists `[to, sl, tog]` and a binding
+   * whose id is in this set matches the tile with the same `param1` (layer).
+   */
+  matchFamily?: number[];
 }
 
 /** One concrete value a parameter slot can take, with its label fragment. */

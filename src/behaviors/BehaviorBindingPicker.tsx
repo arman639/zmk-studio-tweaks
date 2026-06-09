@@ -3,12 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
 import { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import { BehaviorParametersPicker } from "./BehaviorParametersPicker";
-import { SlotBindingPicker } from "./SlotBindingPicker";
+import { LatchConfig, SlotBindingPicker } from "./SlotBindingPicker";
 import { formatBinding, validateBinding } from "./parameters";
 import { bindingToSlots, buildDerivationRegistry } from "./slots";
 import {
   BehaviorTile,
-  BindingTileSection,
   BindingTileTab,
   isLayerTileable,
   isParamTileable,
@@ -253,38 +252,72 @@ export const BehaviorBindingPicker = ({
     isLayerTabBehavior,
   ]);
 
-  // The whole-binding behavior tabs for the Normal strip: a Layer tab (To /
-  // Toggle / Sticky Layer, one tile per layer), then Mouse, then a consolidated
-  // System (Bluetooth / Output / External Power / System), each a run of labelled
-  // keycap-tile sections (one per source behavior).
+  // The slot surface offers one generic "Sticky / Toggle" latch that maps to the
+  // key family (&sk / &kt over a base &kp) or the layer family (&sl / &tog over a
+  // base &to) depending on the current binding. Resolve each behavior id by
+  // displayName (capability-aware — undefined when the firmware omits it).
+  const behaviorIdByName = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const b of behaviors) m.set(b.displayName, b.id);
+    return m;
+  }, [behaviors]);
+  const keyLatch = useMemo<LatchConfig>(
+    () => ({
+      base: registry.idByCore.kp,
+      sticky: behaviorIdByName.get("Sticky Key"),
+      toggle: behaviorIdByName.get("Key Toggle"),
+    }),
+    [registry, behaviorIdByName]
+  );
+  const layerLatch = useMemo<LatchConfig>(
+    () => ({
+      base: behaviorIdByName.get("To Layer"),
+      sticky: behaviorIdByName.get("Sticky Layer"),
+      toggle: behaviorIdByName.get("Toggle Layer"),
+    }),
+    [behaviorIdByName]
+  );
+
+  // The whole-binding behavior tabs for the Normal strip: a Layer tab (To Layer,
+  // one tile per layer — Sticky / Toggle Layer are applied via the latch, not as
+  // tiles), then Mouse, then a consolidated System (Bluetooth / Output / External
+  // Power / System), each a run of labelled keycap-tile sections.
   const behaviorTabs = useMemo<BindingTileTab[]>(() => {
     const sections: Record<"Mouse" | "System", BindingTileTab["sections"]> = {
       Mouse: [],
       System: [],
     };
-    const layerSections: BindingTileSection[] = [];
     for (const b of sortedBehaviors) {
-      if (hiddenIds.has(b.id)) continue;
-      if (isStripBehavior(b)) {
-        const tab = STRIP_GROUPS[classifyBehavior(b)];
-        sections[tab].push({
-          heading: b.displayName,
-          tiles: tileBindingsFor(b) ?? [],
-        });
-      } else if (isLayerTabBehavior(b)) {
-        layerSections.push({
-          heading: b.displayName,
-          tiles: layerTileBindingsFor(b, layers) ?? [],
-        });
-      }
+      if (hiddenIds.has(b.id) || !isStripBehavior(b)) continue;
+      const tab = STRIP_GROUPS[classifyBehavior(b)];
+      sections[tab].push({
+        heading: b.displayName,
+        tiles: tileBindingsFor(b) ?? [],
+      });
     }
     const tabs: BindingTileTab[] = [];
-    if (layerSections.length) tabs.push({ name: "Layer", sections: layerSections });
+    // Layer tab: the To Layer base, exploded per layer. matchFamily lets &sl /
+    // &tog (same layer family) highlight their layer's tile and jump here too.
+    const toLayer = sortedBehaviors.find(
+      (b) => !hiddenIds.has(b.id) && b.displayName === "To Layer"
+    );
+    if (toLayer) {
+      const matchFamily = [layerLatch.base, layerLatch.sticky, layerLatch.toggle].filter(
+        (x): x is number => x !== undefined
+      );
+      tabs.push({
+        name: "Layer",
+        sections: [
+          { heading: "To Layer", tiles: layerTileBindingsFor(toLayer, layers) ?? [] },
+        ],
+        matchFamily,
+      });
+    }
     if (sections.Mouse.length) tabs.push({ name: "Mouse", sections: sections.Mouse });
     if (sections.System.length)
       tabs.push({ name: "System", sections: sections.System });
     return tabs;
-  }, [sortedBehaviors, hiddenIds, isLayerTabBehavior, layers]);
+  }, [sortedBehaviors, hiddenIds, layers, layerLatch]);
 
   // The Basic-tab one-tap flavor tiles (Caps Word / Key Repeat / Grave-Escape),
   // one finished binding each. Capability-aware — only firmware-exposed ones.
@@ -295,16 +328,6 @@ export const BehaviorBindingPicker = ({
     }
     return out;
   }, [sortedBehaviors, isBasicFinishedTile]);
-
-  // Key-state latch behaviors (Sticky Key / Key Toggle) the firmware exposes,
-  // offered as toggles on the slot surface that wrap the Normal key.
-  const keyStateWrappers = useMemo(() => {
-    const out: { id: number; label: string }[] = [];
-    for (const b of sortedBehaviors) {
-      if (isBasicWrapper(b)) out.push({ id: b.id, label: b.displayName });
-    }
-    return out;
-  }, [sortedBehaviors, isBasicWrapper]);
 
   const currentBehavior = behaviors.find((b) => b.id === behaviorId);
   const currentGroup = currentBehavior
@@ -495,7 +518,8 @@ export const BehaviorBindingPicker = ({
         clearTiles={clearTiles}
         behaviorTabs={behaviorTabs}
         basicBehaviorTiles={basicBehaviorTiles}
-        keyStateWrappers={keyStateWrappers}
+        keyLatch={keyLatch}
+        layerLatch={layerLatch}
         currentBehaviorName={currentBehavior?.displayName}
         bindingCode={formatBinding(
           currentBinding,

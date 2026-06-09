@@ -180,16 +180,20 @@ category, but the UI is uniformly "open a tab, press a tile."
 `&sk` (sticky key) and `&kt` (key toggle) take a single key/mod parameter, so they
 are **not** "one tile = one binding": pressing the tile then needs a key chosen.
 The original plan modelled them as a tile that reveals a single-key picker; **as
-built (Step 3b) they are instead a *key-state latch*** — the cleaner framing is
-that they *wrap* a key rather than *being* a key (like the "+ Send with" implicit
-modifiers wrap the Normal key). So they ship as a **checkbox pair on the slot
-label** (`Latch: ☐ Sticky Key ☐ Key Toggle`); ticking one turns the current
-Normal key into `&sk <key>` / `&kt <key>`, and the key itself is still picked from
-the Normal grid. They are mutually exclusive and disabled while Hold mode is on (a
-hold-tap can't also be latched); conversely, while a latch is active the grid is
-**key-only** (the whole-binding tabs/tiles grey out, but None / Transparent stay
-live). Calling them tile-select would be a category error. (See the appendix for
-what these flavor behaviors actually do.)
+built they are instead a *latch*** — the cleaner framing is that they *wrap* the
+current binding rather than *being* a key (like the "+ Send with" implicit
+modifiers wrap the Normal key). So they ship as a **generic `Latch: ☐ Sticky
+☐ Toggle` checkbox pair on the slot label**. The same pair is **family-aware**
+(Step 4): on a key it maps to `&sk`/`&kt` over a base `&kp`; on a layer it maps to
+`&sl`/`&tog` over a base `&to` — `&sk`/`&kt` are to a key exactly what `&sl`/`&tog`
+are to a layer. Ticking carries the bound value (the key, or the layer) in
+`param1`; the value itself is still picked from the Normal grid (key) or the Layer
+tab (layer). The two are mutually exclusive and disabled while Hold mode is on (a
+hold-tap can't also be latched). For a *key* latch the grid goes **key-only**
+(whole-binding tabs/tiles grey out, but None / Transparent stay live); a *layer*
+latch leaves the Layer tab live so the layer can be re-picked. Calling these
+tile-select would be a category error. (See the appendix for what these flavor
+behaviors actually do.)
 
 ### (b) Slot-fill — two slots, behavior derived per §2
 
@@ -491,24 +495,31 @@ The Basic "flavor" behaviors leave the residual chip area entirely, so the
   pickable from the Normal surface instead of the residual chips.
 - **As built (deviation from the slot-model framing).** The original plan put a
   *layer* in the Normal slot and derived `&to`/`&tog`/`&sl` from a sub-mode pick.
-  As shipped, they're a **"Layer" tab in the Normal grid's tab strip** (between
-  *International* and *Mouse*), consistent with the Mouse / System behavior tabs
-  from Step 3a: one labelled section per sub-mode (To Layer / Toggle Layer /
-  Sticky Layer), each **exploded into one tile per layer**. Picking a tile sets
-  the whole binding (`&to <layer>` / …); the reverse-lookup label names it and
-  the tile highlights, and the tab is `keyOnly`-disabled while a latch is active —
-  all reused from the existing behavior-tab machinery, so `slots.ts` is unchanged.
-  [`tiles.ts`](../../src/behaviors/tiles.ts) gains `isLayerTileable` /
-  `layerTileBindingsFor` (unit-tested); the tab is built in
-  [`BehaviorBindingPicker.tsx`](../../src/behaviors/BehaviorBindingPicker.tsx).
+  As shipped: a **"Layer" tab in the Normal grid's tab strip** (between
+  *International* and *Mouse*), consistent with Step 3a's Mouse / System tabs, with
+  **a single "To Layer" section exploded into one tile per layer**. The Sticky /
+  Toggle sub-modes are **not** separate tile sections — they reuse the **latch**
+  (§3c): `&sl`/`&tog` are the layer family of the same Sticky / Toggle checkboxes
+  that give keys `&sk`/`&kt`. So you pick a layer (→ `&to <layer>`) then optionally
+  tick Sticky / Toggle (→ `&sl`/`&tog <layer>`), exactly mirroring keys.
+- **How the pieces fit (all reuse, `slots.ts` unchanged):**
+  - [`tiles.ts`](../../src/behaviors/tiles.ts): `isLayerTileable` /
+    `layerTileBindingsFor` build the To-Layer tiles; `BindingTileTab.matchFamily`
+    lets `&sl`/`&tog` highlight their layer's tile and jump to the Layer tab even
+    though the tile binding is `&to`. (Unit-tested.)
+  - [`SlotBindingPicker.tsx`](../../src/behaviors/SlotBindingPicker.tsx): the latch
+    is family-generic — `keyLatch` / `layerLatch` (base/sticky/toggle ids,
+    resolved by displayName in
+    [`BehaviorBindingPicker.tsx`](../../src/behaviors/BehaviorBindingPicker.tsx)),
+    selected by the current binding's family; toggling swaps the behavior id and
+    carries `param1`.
 - **Note:** this is the *persistent* layer case; the *momentary* layer (`&mo`) and
-  Layer-Tap (`&lt`) live in **Hold mode** and already landed in Step 2. With the
-  tab approach a layer binding is non-core (like a Mouse/System tile), so Hold
-  mode simply reads as off rather than being explicitly disabled.
+  Layer-Tap (`&lt`) live in **Hold mode** and already landed in Step 2. Hold mode
+  is disabled while latched (a latch has no hold).
 - **Deferred:** the custom-hold-tap identity choice (when more than one hold-tap
   behavior exists, pick `&mt` vs e.g. `homerow_mods`, §3b/§8 Q2) is independent of
   the layer work and is left to a later step.
-- **Risk:** low — additive tab; reuses the Step 3a behavior-tab patterns.
+- **Risk:** low — additive tab + a small generalization of the existing latch.
 
 ### Step 5+ — remove the top-level behavior tabs (later, needs its own design)
 
@@ -892,12 +903,13 @@ behavior の挙動は付録参照。）
     付随して keymap-parser に `kt` 別名追加＋`gresc`→`Grave/Escape` 修正、fixtures に 3
     behavior 追加。残置 Basic チップ列は消滅。
   - `HidUsagePicker` のグリッド/タイル型を再利用。capability 連動。
-- **Step 4（実装済み）** — 持続レイヤー切替 `&to`/`&tog`/`&sl` を、当初の「Normal
-  スロットにレイヤー」案ではなく **Normal グリッドのタブ列の「Layer」タブ**として実装
-  （Mouse/System タブと同型）。To/Toggle/Sticky の各セクションをレイヤーごとのタイルに
-  展開し、タイル選択で binding 全体を設定（逆引きラベル・タブ自動ジャンプ・keyOnly
-  無効化は既存機構を再利用、`slots.ts` は無変更）。カスタム hold-tap の identity 選択は
-  独立課題として後続に延期。逆引きラベルは Step 2 で出荷済み。
+- **Step 4（実装済み）** — 持続レイヤー切替を **Normal グリッドの「Layer」タブ**として
+  実装（Mouse/System と同型）。ただしタブは **「To Layer」1セクション**（レイヤーごとの
+  タイル）だけで、Sticky/Toggle は**ラッチに統合**：`&sl`/`&tog` はキーの `&sk`/`&kt` の
+  レイヤー版で、同じ汎用 `Latch: ☐ Sticky ☐ Toggle` が現在の family（key/layer）で
+  `&sk/&kt` か `&sl/&tog` に対応。レイヤーを選ぶ→`&to`、Sticky/Toggle で `&sl`/`&tog`。
+  `matchFamily` で `&sl/&tog` でも該当レイヤータイルがハイライト＆タブジャンプ。
+  `slots.ts` は無変更。カスタム hold-tap の identity 選択は後続に延期。
 - **Step 5 以降（要別設計）** — tier/カテゴリのタブ階層を撤去し「(a)＋(b)＋(c)」へ。
   Step 1-4 で方式が実用検証されてから別途設計。
 

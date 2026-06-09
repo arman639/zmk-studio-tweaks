@@ -596,9 +596,11 @@ const HidUsageGrid = ({
       }
     }
     for (const t of extraTabs ?? []) {
-      const hit = t.sections.some((s) =>
-        s.tiles.some((tile) => sameBinding(tile.binding, activeBinding))
-      );
+      const hit =
+        t.matchFamily?.includes(activeBinding.behaviorId) ||
+        t.sections.some((s) =>
+          s.tiles.some((tile) => sameBinding(tile.binding, activeBinding))
+        );
       if (hit) {
         setActiveTab(t.name);
         return;
@@ -732,9 +734,18 @@ const HidUsageGrid = ({
   // fully visible, so a native `title` replaces the keycode grid's hover tooltip.
   const renderBehaviorTile = (
     tile: BehaviorTile,
-    variant: "tab" | "column" = "tab"
+    variant: "tab" | "column" = "tab",
+    matchFamily?: number[]
   ) => {
-    const active = !!activeBinding && sameBinding(tile.binding, activeBinding);
+    // Highlight on an exact match, or — for a tab with a matchFamily (Layer) —
+    // when the active binding is in that family and shares this tile's param
+    // (e.g. &sl Fn / &tog Fn light up the To-Layer "Fn" tile).
+    const active =
+      !!activeBinding &&
+      (sameBinding(tile.binding, activeBinding) ||
+        (!!matchFamily &&
+          matchFamily.includes(activeBinding.behaviorId) &&
+          tile.binding.param1 === activeBinding.param1));
     const onPress = () => onSelectBinding?.(tile.binding);
     // A whole-binding tile can't be picked while the grid is key-only (latched).
     const disabled = keyOnly;
@@ -1002,7 +1013,9 @@ const HidUsageGrid = ({
                 aria-label={section.heading}
                 className="flex flex-wrap gap-1"
               >
-                {section.tiles.map((t) => renderBehaviorTile(t))}
+                {section.tiles.map((t) =>
+                  renderBehaviorTile(t, "tab", tab.matchFamily)
+                )}
               </div>
             </div>
           ))}
