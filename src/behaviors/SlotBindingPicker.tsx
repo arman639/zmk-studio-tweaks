@@ -211,15 +211,17 @@ export const SlotBindingPicker = ({
     if (holdKind !== "empty") setHoldMode(holdKind);
   }, [holdKind]);
 
-  // The chosen Mod-Tap identity (`&mt` or a custom hold-tap). Kept as local state
-  // so it can be picked *before* a modifier exists — a plain `&kp` can't carry the
-  // identity, so we hold it here and inject it on derive (a key+mod fill becomes
-  // the chosen behavior). Reseeded from the binding whenever the bound key changes.
-  const [holdTapId, setHoldTapId] = useState<number | undefined>(slots.holdTapId);
+  // The chosen hold-tap identity (`&mt`/`&lt` or a custom). Kept as local state so
+  // it can be picked *before* a modifier/layer exists — a plain `&kp` can't carry
+  // the identity, so we hold it here and inject it on derive (a key+hold fill
+  // becomes the chosen behavior). Reseeded only when the bound *identity* changes,
+  // not on a tap-key edit, so a choice made before adding a modifier survives
+  // changing the Normal key.
+  const committedHoldTapId = slots.holdTapId;
+  const [holdTapId, setHoldTapId] = useState<number | undefined>(committedHoldTapId);
   useEffect(() => {
-    setHoldTapId(slots.holdTapId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [binding.behaviorId, binding.param1, binding.param2]);
+    setHoldTapId(committedHoldTapId);
+  }, [committedHoldTapId]);
 
   const writeSlots = (next: Slots) => {
     // Inject the chosen identity so a key+mod fill derives to it (default `&mt`).

@@ -78,8 +78,9 @@ const B = {
   stickyLayer: 23,
   // Firmware-extension (keymap-author-defined) behaviors — not ZMK standards.
   // Each exercises a different "drained residual" route (issue #16): a custom
-  // mod-tap (→ Hold mode), a parameterless one (→ Apps/Media/Special), a custom
-  // layer-tap (→ Hold mode Layer), and a custom enum (→ the Custom tab).
+  // mod-tap (→ Hold mode), a parameterless custom (→ the Custom tab — unrecognized,
+  // so not Apps/Media/Special), a custom layer-tap (→ Hold mode Layer), and a
+  // custom enum (→ the Custom tab).
   homeRowMods: 24,
   numWord: 25,
   layerTap2: 26,
@@ -193,9 +194,10 @@ const BEHAVIORS: GetBehaviorDetailsResponse[] = [
 ];
 
 // Firmware-extension behaviors a keymap author might define. Appended to the
-// standard set for the split fixture so the residual "More behaviors" escape
-// hatch has something to show: a custom hold-tap (param2 hidUsage → classifies
-// "Hold-Tap", not tileable) and a parameterless custom behavior (→ "Other").
+// standard set for the split fixture so the four custom routes are exercisable:
+// a custom mod-tap and layer-tap (→ Hold mode, with an identity choice), and a
+// parameterless custom and a custom enum (both → the Custom tab, since neither is
+// a recognized standard). With all four routed, the residual area stays empty.
 const CUSTOM_BEHAVIORS: GetBehaviorDetailsResponse[] = [
   // Custom mod-tap (→ Hold mode, Mod-Tap identity).
   {
@@ -203,7 +205,7 @@ const CUSTOM_BEHAVIORS: GetBehaviorDetailsResponse[] = [
     displayName: "Home Row Mods",
     metadata: [{ param1: [hidParam("mod")], param2: [hidParam("tap")] }],
   },
-  // Parameterless custom (→ Apps/Media/Special special tile).
+  // Parameterless custom (→ the Custom tab; unrecognized, so classify "Other").
   { id: B.numWord, displayName: "Num Word", metadata: [] },
   // Custom layer-tap, same shape as &lt (→ Hold mode, Layer-Tap identity).
   {
