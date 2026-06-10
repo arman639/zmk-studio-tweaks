@@ -676,6 +676,28 @@ integration branch merges to `main`:
   no-op (silent) when the firmware doesn't expose the derived behavior; tie this
   to the reverse-lookup "no matching behavior" state rather than doing nothing.
 
+### 8b. Known edges (accepted — from the PR #34 review)
+
+Edges that no standard behavior triggers, recorded so they aren't re-discovered.
+None block the merge; each is within the model's stated scope.
+
+- **Wide `range` params explode into many tiles.** `enumerateParam`
+  ([`tiles.ts`](../../src/behaviors/tiles.ts)) renders one tile per value, which is
+  right for the small enums in use (BT profiles, output select). A *future*
+  firmware-extension behavior exposing a wide numeric `range` would render a very
+  large tile grid; no current behavior does, so it's left until one appears.
+- **Shape detection reads only `metadata[0]`.** `isModTapShape` / `isLayerTapShape`
+  ([`slots.ts`](../../src/behaviors/slots.ts)) — and the tile/latch predicates —
+  inspect the first parameter set. Standard behaviors report a single set, so this
+  is exact for them; a custom hold-tap that carries the matching shape *only* in a
+  later set wouldn't be recognized as a family member (it falls back to the
+  residual chip, still settable).
+- **Mouse classification is a name heuristic.** `classifyBehavior`
+  ([`BehaviorBindingPicker.tsx`](../../src/behaviors/BehaviorBindingPicker.tsx))
+  routes a behavior whose `displayName` contains "mouse" to the Mouse tab
+  regardless of shape — intentional, so custom mouse behaviors land with the
+  standard ones.
+
 ---
 
 ## Appendix — what the "flavor" behaviors actually do
@@ -1057,3 +1079,17 @@ upstream（[`zmkfirmware/zmk-studio`](https://github.com/zmkfirmware/zmk-studio)
 4. ~~**Step 5 の範囲。**~~ **解決（Step 5）。** 旧階層は「上級者向け」面として残すのでは
    なく**排水**：全 behavior を形に応じた置き場へ送り、残置「More behaviors」は自動的に
    隠れ、形に収まらない exotic custom のときだけ安全網として出る。並行モードではない。
+
+### 8b. 既知のエッジ（許容・PR #34 レビューより）
+
+標準 behavior では発生しないが、再発見を避けるため記録。いずれもマージのブロッカーでは
+なく、モデルの想定範囲内（英語が正）。
+
+1. **広い `range` は大量タイルに展開。** `enumerateParam`（`tiles.ts`）は値ごとに1タイル。
+   現用の小さな enum（BT profile・output 等）には正しいが、将来広い数値 `range` を持つ
+   拡張 behavior は巨大グリッドになりうる。現状該当なしのため、出てきたら対応。
+2. **形判定は `metadata[0]` のみ参照。** `isModTapShape`/`isLayerTapShape`（`slots.ts`）と
+   タイル/ラッチ判定は最初のパラメータセットを見る。標準は単一セットなので厳密だが、一致形が
+   後続セットにしか無いカスタムは family 未認識（残置チップに落ち、設定は可能）。
+3. **Mouse 分類は名前ヒューリスティック。** `classifyBehavior`（`BehaviorBindingPicker.tsx`）は
+   `displayName` に "mouse" を含む behavior を形に依らず Mouse タブへ。意図的。
