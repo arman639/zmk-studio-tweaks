@@ -135,13 +135,12 @@ export interface HidUsagePickerProps {
    */
   extraTabs?: BindingTileTab[];
   /**
-   * One-tap "flavor" behaviors shown as a right-hand column *inside the Basic
-   * keycode tab* (issue #16, Step 3b): Caps Word / Key Repeat / Grave-Escape.
-   * Each is a finished binding set via {@link onSelectBinding}, placed next to
-   * None / Transparent since they're all single-action caps. Other HidUsagePicker
+   * Rarely-used one-tap "flavor" behaviors (Caps Word / Key Repeat / Grave-
+   * Escape) appended into the **Apps/Media/Special** keycode tab (issue #16),
+   * each a finished binding set via {@link onSelectBinding}. Other HidUsagePicker
    * uses omit them.
    */
-  basicBehaviorTiles?: BehaviorTile[];
+  specialTiles?: BehaviorTile[];
   /** Current full binding, used to highlight the active behavior tile / tab. */
   activeBinding?: BehaviorBinding;
   /** Called with the whole binding when a behavior tile is pressed. */
@@ -232,7 +231,7 @@ const HidUsageGrid = ({
   usagePages,
   clearTiles,
   extraTabs,
-  basicBehaviorTiles,
+  specialTiles,
   activeBinding,
   onSelectBinding,
   keyOnly,
@@ -587,18 +586,20 @@ const HidUsageGrid = ({
   // pick a Normal key.
   useEffect(() => {
     if (!activeBinding) return;
-    // A Basic one-tap flavor behavior (Caps Word / Key Repeat / Grave-Escape, in
-    // the Basic tab's right column) jumps to the Basic tab.
-    for (const tile of basicBehaviorTiles ?? []) {
+    // A flavor behavior (Caps Word / Key Repeat / Grave-Escape) lives in the
+    // Apps/Media/Special tab, so jump there when one is the current binding.
+    for (const tile of specialTiles ?? []) {
       if (sameBinding(tile.binding, activeBinding)) {
-        setActiveTab(BASIC_TAB_ID);
+        setActiveTab(APPS_MEDIA_TAB);
         return;
       }
     }
     for (const t of extraTabs ?? []) {
-      const hit = t.sections.some((s) =>
-        s.tiles.some((tile) => sameBinding(tile.binding, activeBinding))
-      );
+      const hit =
+        t.matchFamily?.includes(activeBinding.behaviorId) ||
+        t.sections.some((s) =>
+          s.tiles.some((tile) => sameBinding(tile.binding, activeBinding))
+        );
       if (hit) {
         setActiveTab(t.name);
         return;
@@ -610,7 +611,7 @@ const HidUsageGrid = ({
     activeBinding?.param1,
     activeBinding?.param2,
     extraTabs,
-    basicBehaviorTiles,
+    specialTiles,
   ]);
 
   const onTabChange = useCallback((k: string) => setActiveTab(k), []);
@@ -650,19 +651,19 @@ const HidUsageGrid = ({
   const behaviorSearchResults = useMemo(() => {
     if (!trimmedSearch) return [];
     const out: BehaviorTile[] = [];
-    for (const tile of basicBehaviorTiles ?? []) {
+    for (const tile of specialTiles ?? []) {
       if (tile.label.toLowerCase().includes(trimmedSearch)) out.push(tile);
     }
     for (const tab of extraTabs ?? []) {
       for (const section of tab.sections) {
         for (const tile of section.tiles) {
-          const haystack = `${tile.label} ${section.heading} ${tab.name}`.toLowerCase();
+          const haystack = `${tile.label} ${section.heading ?? ""} ${tab.name}`.toLowerCase();
           if (haystack.includes(trimmedSearch)) out.push(tile);
         }
       }
     }
     return out;
-  }, [trimmedSearch, extraTabs, basicBehaviorTiles]);
+  }, [trimmedSearch, extraTabs, specialTiles]);
 
   const renderUsageButton = (usage: Usage) => {
     const usageValue = (usage.pageId << 16) | usage.Id;
@@ -730,21 +731,21 @@ const HidUsageGrid = ({
   // current binding" control, so it's a `radio` (consistent with the residual
   // behavior chips), highlighted when it is the current binding. The label is
   // fully visible, so a native `title` replaces the keycode grid's hover tooltip.
-  const renderBehaviorTile = (
-    tile: BehaviorTile,
-    variant: "tab" | "column" = "tab"
-  ) => {
-    const active = !!activeBinding && sameBinding(tile.binding, activeBinding);
+  const renderBehaviorTile = (tile: BehaviorTile, matchFamily?: number[]) => {
+    // Highlight on an exact match, or — for a tab with a matchFamily (Layer) —
+    // when the active binding is in that family and shares this tile's param
+    // (e.g. &sl Fn / &tog Fn light up the To-Layer "Fn" tile).
+    const active =
+      !!activeBinding &&
+      (sameBinding(tile.binding, activeBinding) ||
+        (!!matchFamily &&
+          matchFamily.includes(activeBinding.behaviorId) &&
+          tile.binding.param1 === activeBinding.param1));
     const onPress = () => onSelectBinding?.(tile.binding);
-    // A whole-binding tile can't be picked while the grid is key-only (latched).
-    const disabled = keyOnly;
-    // The column variant is a 1U-wide cap whose height grows so long labels wrap
-    // (e.g. "Grave/Escape" → two lines), at the largest font a 6-char word still
-    // fits the 1U width without breaking mid-word (~13px; text-sm/14px overflows).
-    const sizing =
-      variant === "column"
-        ? "min-h-12 px-0 text-[13px] whitespace-normal break-words"
-        : "min-w-16 h-16 px-2 whitespace-nowrap";
+    // While a key latch is active the grid is key-only, so whole-binding tiles
+    // are disabled — except a latch *target* family (the Layer tab, which carries
+    // matchFamily): a layer is a valid thing to latch, so it stays pickable.
+    const disabled = keyOnly && !matchFamily;
     return (
       <button
         key={`${tile.binding.behaviorId}-${tile.binding.param1}-${tile.binding.param2}`}
@@ -754,16 +755,9 @@ const HidUsageGrid = ({
         disabled={disabled}
         title={tile.label}
         onClick={onPress}
-        style={variant === "column" ? { width: `${cellWidthPx(1)}px` } : undefined}
-        className={`${sizing} rounded border text-center flex items-center justify-center leading-tight shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${active ? "bg-primary text-primary-content" : "bg-base-200 hover:bg-base-300"}`}
+        className={`min-w-16 h-16 px-2 whitespace-nowrap rounded border text-center flex items-center justify-center leading-tight shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${active ? "bg-primary text-primary-content" : "bg-base-200 hover:bg-base-300"}`}
       >
-        {/* The label is a flex item; min-w-0 lets it shrink so a long name
-            (e.g. "Grave/Escape") wraps within the cap instead of spilling. */}
-        {variant === "column" ? (
-          <span className="min-w-0 break-words">{tile.label}</span>
-        ) : (
-          tile.label
-        )}
+        {tile.label}
       </button>
     );
   };
@@ -825,7 +819,11 @@ const HidUsageGrid = ({
       className="flex flex-col"
       selectedKey={activeTab ?? BASIC_TAB_ID}
       onSelectionChange={(k) => onTabChange(k as string)}
-      disabledKeys={keyOnly ? extraTabNames : []}
+      disabledKeys={
+        keyOnly
+          ? (extraTabs ?? []).filter((t) => !t.matchFamily).map((t) => t.name)
+          : []
+      }
     >
       <TabList className="flex border-b">
         {allTabs.map((category) => (
@@ -864,30 +862,15 @@ const HidUsageGrid = ({
                   </div>
                 ))}
               </div>
-              {/* Right block: the one-tap flavor behaviors (Caps Word / Key
-                  Repeat / Grave-Escape) in a 2-wide grid at the top, with the
-                  special None / Transparent caps pinned to the bottom row
-                  (mt-auto), aligned with the board's last row. (Other tabs keep
-                  the clear caps trailing the key list.) */}
-              {((basicBehaviorTiles && basicBehaviorTiles.length > 0) ||
-                (clearTiles && clearTiles.tiles.length > 0)) && (
+              {/* Right block: the special None / Transparent caps, pinned to the
+                  bottom row (mt-auto), aligned with the board's last row. */}
+              {clearTiles && clearTiles.tiles.length > 0 && (
                 <div className="flex flex-col gap-1 pl-2 border-l border-base-300">
-                  {basicBehaviorTiles && basicBehaviorTiles.length > 0 && (
-                    <div
-                      role="radiogroup"
-                      aria-label="One-tap behaviors"
-                      className="grid grid-cols-2 gap-1 w-fit"
-                    >
-                      {basicBehaviorTiles.map((t) => renderBehaviorTile(t, "column"))}
-                    </div>
-                  )}
-                  {clearTiles && clearTiles.tiles.length > 0 && (
-                    <div className="grid grid-cols-2 gap-1 w-fit mt-auto">
-                      {clearTiles.tiles.map((tile) =>
-                        renderClearKeycap(tile, "basic")
-                      )}
-                    </div>
-                  )}
+                  <div className="grid grid-cols-2 gap-1 w-fit mt-auto">
+                    {clearTiles.tiles.map((tile) =>
+                      renderClearKeycap(tile, "basic")
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -979,7 +962,31 @@ const HidUsageGrid = ({
           ) : (
             <>
               {categorizedUsages[category].map(renderUsageButton)}
-              {trailingClearKeycapsUsage}
+              {/* The rarely-used flavor behaviors (Caps Word / Key Repeat /
+                  Grave-Escape) get their own row after the media keys, and the
+                  None / Transparent clear caps share that row's trailing space
+                  so they don't wrap onto a line of their own. The flavor tiles
+                  stay in their own radiogroup (they're radios; the clear caps
+                  are toggle buttons). */}
+              {category === APPS_MEDIA_TAB ? (
+                ((specialTiles && specialTiles.length > 0) ||
+                  trailingClearKeycapsUsage) && (
+                  <div className="flex flex-wrap items-start gap-1 basis-full">
+                    {specialTiles && specialTiles.length > 0 && (
+                      <div
+                        role="radiogroup"
+                        aria-label="Behaviors"
+                        className="flex flex-wrap gap-1"
+                      >
+                        {specialTiles.map((t) => renderBehaviorTile(t))}
+                      </div>
+                    )}
+                    {trailingClearKeycapsUsage}
+                  </div>
+                )
+              ) : (
+                trailingClearKeycapsUsage
+              )}
             </>
           )}
         </TabPanel>
@@ -992,17 +999,24 @@ const HidUsageGrid = ({
           id={tab.name}
           className="min-h-[17rem] max-h-[17rem] overflow-y-auto flex flex-col gap-3 p-1 border border-t-0 rounded-b rac-focus-visible:ring-2 rac-focus-visible:ring-primary"
         >
-          {tab.sections.map((section) => (
-            <div key={section.heading} className="flex flex-col gap-1">
-              <span className="text-sm uppercase tracking-wide font-semibold text-base-content/70">
-                {section.heading}
-              </span>
+          {tab.sections.map((section, i) => (
+            <div
+              key={section.heading ?? `section-${i}`}
+              className="flex flex-col gap-1"
+            >
+              {section.heading && (
+                <span className="text-sm uppercase tracking-wide font-semibold text-base-content/70">
+                  {section.heading}
+                </span>
+              )}
               <div
                 role="radiogroup"
-                aria-label={section.heading}
+                aria-label={section.heading ?? tab.name}
                 className="flex flex-wrap gap-1"
               >
-                {section.tiles.map((t) => renderBehaviorTile(t))}
+                {section.tiles.map((t) =>
+                  renderBehaviorTile(t, tab.matchFamily)
+                )}
               </div>
             </div>
           ))}
@@ -1022,7 +1036,7 @@ export const HidUsagePicker = ({
   disabled,
   clearTiles,
   extraTabs,
-  basicBehaviorTiles,
+  specialTiles,
   activeBinding,
   onSelectBinding,
   keyOnly,
@@ -1163,7 +1177,7 @@ export const HidUsagePicker = ({
         usagePages={usagePages}
         clearTiles={clearTiles}
         extraTabs={extraTabs}
-        basicBehaviorTiles={basicBehaviorTiles}
+        specialTiles={specialTiles}
         activeBinding={activeBinding}
         onSelectBinding={onSelectBinding}
         keyOnly={keyOnly}

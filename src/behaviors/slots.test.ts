@@ -173,6 +173,155 @@ describe("bindingToSlots", () => {
   });
 });
 
+describe("custom hold-tap identity (mod-tap family, §8 Q2)", () => {
+  // A keymap-author-defined hold-tap of the same shape as &mt (mod param, then
+  // key param), e.g. homerow_mods. It is not a standard behavior.
+  const HRM_ID = 99;
+  const withHrm = [
+    ...behaviors,
+    {
+      id: HRM_ID,
+      displayName: "Home Row Mods",
+      metadata: [
+        {
+          param1: [{ name: "mod", hidUsage: { keyboardMax: 0xffff, consumerMax: 0xffff } }],
+          param2: [{ name: "tap", hidUsage: { keyboardMax: 0xffff, consumerMax: 0xffff } }],
+        },
+      ],
+    },
+  ];
+  const regHrm = buildDerivationRegistry(withHrm);
+
+  it("lists the mod-tap family with the standard &mt first", () => {
+    expect(regHrm.modTapIds).toEqual([MT, HRM_ID]);
+  });
+
+  it("a key+mod fill defaults to &mt when no identity is chosen", () => {
+    const slots: Slots = {
+      tap: { kind: "key", usage: KEY_A },
+      hold: { kind: "mod", usage: LSHIFT },
+    };
+    expect(deriveBinding(slots, regHrm)).toEqual({
+      behaviorId: MT,
+      param1: LSHIFT,
+      param2: KEY_A,
+    });
+  });
+
+  it("derives the custom hold-tap when its identity is chosen", () => {
+    const slots: Slots = {
+      tap: { kind: "key", usage: KEY_A },
+      hold: { kind: "mod", usage: LSHIFT },
+      holdTapId: HRM_ID,
+    };
+    expect(deriveBinding(slots, regHrm)).toEqual({
+      behaviorId: HRM_ID,
+      param1: LSHIFT,
+      param2: KEY_A,
+    });
+  });
+
+  it("decomposes a custom hold-tap into slots carrying its identity", () => {
+    expect(
+      bindingToSlots({ behaviorId: HRM_ID, param1: LCTRL, param2: KEY_A }, regHrm)
+    ).toEqual({
+      tap: { kind: "key", usage: KEY_A },
+      hold: { kind: "mod", usage: LCTRL },
+      holdTapId: HRM_ID,
+    });
+  });
+
+  it("round-trips a custom hold-tap binding → slots → binding", () => {
+    const binding = { behaviorId: HRM_ID, param1: LS(LCTRL), param2: KEY_ENTER };
+    const slots = bindingToSlots(binding, regHrm);
+    expect(slots).not.toBeNull();
+    expect(deriveBinding(slots!, regHrm)).toEqual(binding);
+  });
+
+  it("ignores a holdTapId the firmware doesn't expose (falls back to &mt)", () => {
+    const slots: Slots = {
+      tap: { kind: "key", usage: KEY_A },
+      hold: { kind: "mod", usage: LSHIFT },
+      holdTapId: HRM_ID, // not present in the standard-only registry
+    };
+    expect(deriveBinding(slots, reg)).toEqual({
+      behaviorId: MT,
+      param1: LSHIFT,
+      param2: KEY_A,
+    });
+  });
+});
+
+describe("custom layer-tap identity (layer-tap family, §8 Q2)", () => {
+  // A keymap-author-defined hold-tap of the &lt shape (layer param, then key).
+  const BLT_ID = 98;
+  const withBlt = [
+    ...behaviors,
+    {
+      id: BLT_ID,
+      displayName: "Balanced LT",
+      metadata: [
+        { param1: [{ name: "layer", layerId: {} }], param2: [{ name: "tap", hidUsage: { keyboardMax: 0xffff, consumerMax: 0xffff } }] },
+      ],
+    },
+  ];
+  const regBlt = buildDerivationRegistry(withBlt);
+
+  it("lists the layer-tap family with the standard &lt first", () => {
+    expect(regBlt.layerTapIds).toEqual([LT, BLT_ID]);
+  });
+
+  it("a key+layer fill defaults to &lt when no identity is chosen", () => {
+    const slots: Slots = {
+      tap: { kind: "key", usage: KEY_SPACE },
+      hold: { kind: "layer", layerId: FN_LAYER },
+    };
+    expect(deriveBinding(slots, regBlt)).toEqual({
+      behaviorId: LT,
+      param1: FN_LAYER,
+      param2: KEY_SPACE,
+    });
+  });
+
+  it("derives the custom layer-tap when its identity is chosen", () => {
+    const slots: Slots = {
+      tap: { kind: "key", usage: KEY_SPACE },
+      hold: { kind: "layer", layerId: FN_LAYER },
+      holdTapId: BLT_ID,
+    };
+    expect(deriveBinding(slots, regBlt)).toEqual({
+      behaviorId: BLT_ID,
+      param1: FN_LAYER,
+      param2: KEY_SPACE,
+    });
+  });
+
+  it("round-trips a custom layer-tap binding → slots → binding", () => {
+    const binding = { behaviorId: BLT_ID, param1: FN_LAYER, param2: KEY_ENTER };
+    const slots = bindingToSlots(binding, regBlt);
+    expect(slots).toEqual({
+      tap: { kind: "key", usage: KEY_ENTER },
+      hold: { kind: "layer", layerId: FN_LAYER },
+      holdTapId: BLT_ID,
+    });
+    expect(deriveBinding(slots!, regBlt)).toEqual(binding);
+  });
+
+  it("ignores a layer-tap id in the modifier branch (families don't cross)", () => {
+    // holdTapId from the layer family must not hijack a key+mod fill.
+    const slots: Slots = {
+      tap: { kind: "key", usage: KEY_A },
+      hold: { kind: "mod", usage: LSHIFT },
+      holdTapId: BLT_ID,
+    };
+    expect(deriveBinding(slots, regBlt)).toEqual({
+      behaviorId: MT,
+      param1: LSHIFT,
+      param2: KEY_A,
+    });
+  });
+});
+
 describe("round trip — binding-lossless for every core behavior", () => {
   const bindings: [name: string, binding: BehaviorBinding][] = [
     ["&kp A", { behaviorId: KP, param1: KEY_A, param2: 0 }],

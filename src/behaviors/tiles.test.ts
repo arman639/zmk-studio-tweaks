@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
 
-import { isParamTileable, isTileable, tileBindingsFor } from "./tiles";
+import {
+  isLayerTileable,
+  isParameterless,
+  isParamTileable,
+  isTileable,
+  layerTileBindingsFor,
+  tileBindingsFor,
+} from "./tiles";
 
 const HID = { keyboardMax: 0xffff, consumerMax: 0xffff };
 
@@ -153,5 +160,72 @@ describe("isParamTileable (key-state latch behaviors: Sticky Key / Key Toggle)",
       },
     ]);
     expect(isParamTileable(mt)).toBe(false);
+  });
+});
+
+describe("isParameterless (Special one-tap tiles)", () => {
+  it("is true for empty metadata and for empty param sets", () => {
+    expect(isParameterless(behavior(11, "Reset", []))).toBe(true);
+    expect(
+      isParameterless(behavior(3, "Caps Word", [{ param1: [], param2: [] }]))
+    ).toBe(true);
+    // A custom parameterless behavior (e.g. Num Word) qualifies too.
+    expect(isParameterless(behavior(25, "Num Word", []))).toBe(true);
+  });
+
+  it("is false once any parameter slot takes a value", () => {
+    const sk = behavior(2, "Sticky Key", [
+      { param1: [{ name: "key", hidUsage: HID }], param2: [] },
+    ]);
+    expect(isParameterless(sk)).toBe(false);
+  });
+});
+
+describe("isLayerTileable / layerTileBindingsFor (persistent layer switches)", () => {
+  const toLayer = behavior(8, "To Layer", [
+    { param1: [{ name: "layer", layerId: {} }], param2: [] },
+  ]);
+  const layers = [
+    { id: 0, name: "Base" },
+    { id: 1, name: "Fn" },
+  ];
+
+  it("is true for a single-layer-param behavior, false for a key param", () => {
+    expect(isLayerTileable(toLayer)).toBe(true);
+    expect(
+      isLayerTileable(
+        behavior(2, "Sticky Key", [
+          { param1: [{ name: "key", hidUsage: HID }], param2: [] },
+        ])
+      )
+    ).toBe(false);
+  });
+
+  it("is false for Layer-Tap (a layer param plus a tap key)", () => {
+    const lt = behavior(7, "Layer-Tap", [
+      {
+        param1: [{ name: "layer", layerId: {} }],
+        param2: [{ name: "tap", hidUsage: HID }],
+      },
+    ]);
+    expect(isLayerTileable(lt)).toBe(false);
+  });
+
+  it("explodes into one tile per layer, labelled by layer name", () => {
+    expect(layerTileBindingsFor(toLayer, layers)).toEqual([
+      { label: "Base", binding: { behaviorId: 8, param1: 0, param2: 0 } },
+      { label: "Fn", binding: { behaviorId: 8, param1: 1, param2: 0 } },
+    ]);
+  });
+
+  it("falls back to the layer index when a layer has no name", () => {
+    const tiles = layerTileBindingsFor(toLayer, [{ id: 5, name: "" }]);
+    expect(tiles).toEqual([
+      { label: "0", binding: { behaviorId: 8, param1: 5, param2: 0 } },
+    ]);
+  });
+
+  it("returns null for a non-layer behavior", () => {
+    expect(layerTileBindingsFor(behavior(11, "Reset", []), layers)).toBeNull();
   });
 });

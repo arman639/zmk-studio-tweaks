@@ -10,6 +10,9 @@ import { Key } from "./Key";
 export type KeyPosition = PropsWithChildren<{
   id: string;
   header?: string;
+  /** Whether the binding has a parameter to show; false → the header is the
+   * key's legend (a paramless behavior), not a badge above a value. */
+  hasParam?: boolean;
   width: number;
   height: number;
   x: number;

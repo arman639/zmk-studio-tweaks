@@ -26,9 +26,14 @@ export interface BehaviorTile {
   binding: BehaviorBinding;
 }
 
-/** A labelled run of tiles within a tab (one heading per source behavior). */
+/**
+ * A run of tiles within a tab. `heading` labels the source behavior when a tab
+ * holds several (Mouse / System); a single-section tab whose tab name already
+ * says everything (the Layer tab — the latch, not a heading, decides
+ * To / Sticky / Toggle) omits it.
+ */
 export interface BindingTileSection {
-  heading: string;
+  heading?: string;
   tiles: BehaviorTile[];
 }
 
@@ -40,6 +45,14 @@ export interface BindingTileSection {
 export interface BindingTileTab {
   name: string;
   sections: BindingTileSection[];
+  /**
+   * Behavior ids that count as the same "family" as this tab's tiles for the
+   * purpose of highlighting / jumping. The Layer tab's tiles are `&to <layer>`,
+   * but `&sl`/`&tog` (Sticky/Toggle Layer, applied via the latch) should still
+   * light up their layer's tile — so the tab lists `[to, sl, tog]` and a binding
+   * whose id is in this set matches the tile with the same `param1` (layer).
+   */
+  matchFamily?: number[];
 }
 
 /** One concrete value a parameter slot can take, with its label fragment. */
@@ -131,6 +144,21 @@ export function isTileable(behavior: GetBehaviorDetailsResponse): boolean {
 }
 
 /**
+ * Whether a behavior takes no parameters at all — a single finished tile with
+ * nothing to pick (Caps Word / Key Repeat / Grave-Escape, and custom flavor
+ * behaviors like Num Word). These are the "Special" one-tap tiles in the Normal
+ * grid's Apps/Media/Special tab (issue #16), so a parameterless custom behavior
+ * joins them rather than sitting in the residual area.
+ */
+export function isParameterless(behavior: GetBehaviorDetailsResponse): boolean {
+  const sets = behavior.metadata;
+  if (!sets || sets.length === 0) return true;
+  return sets.every(
+    (s) => (s.param1?.length ?? 0) === 0 && (s.param2?.length ?? 0) === 0
+  );
+}
+
+/**
  * Whether a behavior takes exactly one HID-key parameter and nothing else
  * (Sticky Key, Key Toggle). Such a behavior wraps a single key, so the slot
  * surface offers it as a *key-state latch* applied to the Normal key (design
@@ -143,4 +171,36 @@ export function isParamTileable(behavior: GetBehaviorDetailsResponse): boolean {
   const p1 = sets[0].param1 ?? [];
   const p2 = sets[0].param2 ?? [];
   return p1.length === 1 && !!p1[0].hidUsage && p2.length === 0;
+}
+
+/**
+ * Whether a behavior takes exactly one layer parameter and nothing else: the
+ * persistent layer switches To / Toggle / Sticky Layer (also Momentary Layer,
+ * which the caller excludes as a slot-model core). Such a behavior is a finished
+ * binding once a layer is chosen, so it's exploded into one tile per layer
+ * (issue #16, Step 4 — the Normal grid's "Layer" tab).
+ */
+export function isLayerTileable(behavior: GetBehaviorDetailsResponse): boolean {
+  const sets = behavior.metadata;
+  if (!sets || sets.length !== 1) return false;
+  const p1 = sets[0].param1 ?? [];
+  const p2 = sets[0].param2 ?? [];
+  return p1.length === 1 && !!p1[0].layerId && p2.length === 0;
+}
+
+/**
+ * Expand a single-layer-param behavior into one finished tile per layer, or
+ * `null` when it isn't that shape. The tile label is the layer's name (falling
+ * back to its index); the section heading names the behavior (To / Toggle /
+ * Sticky Layer), so a bare layer name reads unambiguously.
+ */
+export function layerTileBindingsFor(
+  behavior: GetBehaviorDetailsResponse,
+  layers: { id: number; name: string }[]
+): BehaviorTile[] | null {
+  if (!isLayerTileable(behavior)) return null;
+  return layers.map((l, i) => ({
+    label: l.name || i.toString(),
+    binding: { behaviorId: behavior.id, param1: l.id, param2: 0 },
+  }));
 }

@@ -25,6 +25,17 @@ import { hid_usage_get_label, hid_usage_page_and_id_from_usage } from "../hid-us
 import { useHostLayout } from "../layouts/LayoutContext";
 import type { HostLayout } from "../layouts";
 
+/**
+ * The behavior ids for one latch "family": a `base` (plain) the latch wraps into
+ * a `sticky` (one-shot) or `toggle` (latched) variant — `&kp`/`&sk`/`&kt` for
+ * keys, `&to`/`&sl`/`&tog` for layers. Each id is optional (capability-aware).
+ */
+export interface LatchConfig {
+  base?: number;
+  sticky?: number;
+  toggle?: number;
+}
+
 export interface SlotBindingPickerProps {
   binding: BehaviorBinding;
   registry: DerivationRegistry;
@@ -43,18 +54,37 @@ export interface SlotBindingPickerProps {
    */
   behaviorTabs?: BindingTileTab[];
   /**
-   * One-tap "flavor" behaviors (Caps Word / Key Repeat / Grave-Escape) shown as
-   * a column inside the Normal grid's Basic tab — picked the same way a key is
-   * (issue #16, Step 3b). Selecting one calls {@link onBindingChanged}.
+   * Rarely-used one-tap "flavor" behaviors (Caps Word / Key Repeat / Grave-
+   * Escape) shown in the Normal grid's Apps/Media/Special tab (issue #16).
+   * Selecting one calls {@link onBindingChanged}.
    */
-  basicBehaviorTiles?: BehaviorTile[];
+  specialTiles?: BehaviorTile[];
   /**
-   * Key-state latch behaviors (Sticky Key / Key Toggle) the firmware exposes.
-   * Shown as toggles below Send With: they wrap the Normal key (`&kp K` → `&sk K`
-   * / `&kt K`), so the affected key is still picked from the normal grid
-   * (issue #16, Step 3b). Empty/omitted when the firmware exposes neither.
+   * The key-family latch ids: a base (`&kp`) the latch wraps into Sticky (`&sk`)
+   * or Toggle (`&kt`). Shown as a generic "Sticky / Toggle" pair on the slot
+   * label when the current binding is a key (issue #16, Steps 3b/4).
    */
-  keyStateWrappers?: { id: number; label: string }[];
+  keyLatch?: LatchConfig;
+  /**
+   * The layer-family latch ids: a base (`&to`) wrapped into Sticky (`&sl`) or
+   * Toggle (`&tog`). The *same* "Sticky / Toggle" pair maps here instead when the
+   * current binding is a layer switch — `&sk`/`&kt` are to a key what `&sl`/`&tog`
+   * are to a layer (issue #16, Step 4).
+   */
+  layerLatch?: LatchConfig;
+  /**
+   * The Mod-Tap identity choices: `&mt` plus any custom hold-taps of the same
+   * shape (e.g. `homerow_mods`). When more than one exists, the Hold-mode
+   * Modifier panel shows a selector so a `key + mod` fill can derive to the
+   * chosen behavior (issue #16 §8 Q2). First entry is the default (`&mt`).
+   */
+  modTapOptions?: { id: number; name: string }[];
+  /**
+   * The Layer-Tap identity choices: `&lt` plus any custom layer-taps. Same as
+   * {@link modTapOptions} but for the Hold-mode Layer sub-mode (a `key + layer`
+   * fill). First entry is the default (`&lt`).
+   */
+  layerTapOptions?: { id: number; name: string }[];
   /**
    * Display name of the current behavior when it is *not* a slot-derivable core
    * (e.g. a Mouse / System tile). Shown in the reverse-lookup label instead of
@@ -114,26 +144,44 @@ export const SlotBindingPicker = ({
   onBindingChanged,
   clearTiles,
   behaviorTabs,
-  basicBehaviorTiles,
-  keyStateWrappers,
+  specialTiles,
+  keyLatch,
+  layerLatch,
+  modTapOptions,
+  layerTapOptions,
   currentBehaviorName,
   bindingCode,
 }: SlotBindingPickerProps) => {
   const slots = bindingToSlots(binding, registry) ?? EMPTY_SLOTS;
   const layout = useHostLayout();
 
-  // Sticky Key / Key Toggle "latch" the Normal key: the binding is the wrapper
-  // behavior with the key as its single param. They sit outside the core slot
-  // model, so detect them by id and read/write the key directly.
-  const currentWrapper =
-    (keyStateWrappers ?? []).find((w) => w.id === binding.behaviorId) ?? null;
-  // The Normal key being edited, whichever shape currently holds it: the wrapper
-  // param, or the core slot's tap (kp param1, mt/lt tap key).
-  const normalKey = currentWrapper
-    ? binding.param1 || undefined
-    : slots.tap.kind === "key"
-      ? slots.tap.usage
-      : undefined;
+  // One generic Sticky / Toggle latch maps to whichever family the current
+  // binding belongs to: layer (&to/&sl/&tog) when the bound id is in the layer
+  // latch, else key (&kp/&sk/&kt). The wrapped value is always `param1` (the key
+  // or the layer), so toggling just swaps the behavior id and carries param1.
+  const inFamily = (latch: LatchConfig | undefined, id: number) =>
+    !!latch &&
+    (id === latch.base || id === latch.sticky || id === latch.toggle);
+  const isLayerFamily = inFamily(layerLatch, binding.behaviorId);
+  const activeLatch = isLayerFamily ? layerLatch! : keyLatch ?? {};
+  const isSticky =
+    activeLatch.sticky !== undefined && binding.behaviorId === activeLatch.sticky;
+  const isToggle =
+    activeLatch.toggle !== undefined && binding.behaviorId === activeLatch.toggle;
+  const isLatched = isSticky || isToggle;
+  // A key latch makes the Normal grid the picker for the latched key; a layer
+  // latch's value lives in the Layer tab, so the grid stays empty for it.
+  const keyLatched = !isLayerFamily && isLatched;
+
+  // The Normal key being edited (key family only): the latched key's param, or
+  // the core slot's tap (kp param1, mt/lt tap key). Layer family has no Normal key.
+  const normalKey = isLayerFamily
+    ? undefined
+    : keyLatched
+      ? binding.param1 || undefined
+      : slots.tap.kind === "key"
+        ? slots.tap.usage
+        : undefined;
 
   // Search for the Normal key grid is hosted here (on the NORMAL header row) and
   // fed to the grid, so the grid drops its own "Key" header.
@@ -163,18 +211,33 @@ export const SlotBindingPicker = ({
     if (holdKind !== "empty") setHoldMode(holdKind);
   }, [holdKind]);
 
+  // The chosen hold-tap identity (`&mt`/`&lt` or a custom). Kept as local state so
+  // it can be picked *before* a modifier/layer exists — a plain `&kp` can't carry
+  // the identity, so we hold it here and inject it on derive (a key+hold fill
+  // becomes the chosen behavior). Reseeded only when the bound *identity* changes,
+  // not on a tap-key edit, so a choice made before adding a modifier survives
+  // changing the Normal key.
+  const committedHoldTapId = slots.holdTapId;
+  const [holdTapId, setHoldTapId] = useState<number | undefined>(committedHoldTapId);
+  useEffect(() => {
+    setHoldTapId(committedHoldTapId);
+  }, [committedHoldTapId]);
+
   const writeSlots = (next: Slots) => {
-    const derived = deriveBinding(next, registry);
+    // Inject the chosen identity so a key+mod fill derives to it (default `&mt`).
+    const derived = deriveBinding({ ...next, holdTapId }, registry);
     if (derived) onBindingChanged(derived);
   };
 
-  // Picking a key from the grid sets the Normal key. When a latch (Sticky Key /
-  // Key Toggle) is active, the key is the wrapper's param so the latch is kept;
-  // otherwise it flows through the core slot model (→ &kp / &mt / ...).
+  // Picking a key from the grid sets the Normal key. When a *key* latch is active
+  // the key is the latch behavior's param so the latch is kept; otherwise it
+  // flows through the core slot model (→ &kp / &mt / ...). (A layer latch's value
+  // is the layer, picked from the Layer tab, so the grid still writes a plain key
+  // — a deliberate "switch back to a key" escape.)
   const setNormalKey = (usage?: number) => {
-    if (currentWrapper) {
+    if (keyLatched) {
       onBindingChanged({
-        behaviorId: currentWrapper.id,
+        behaviorId: binding.behaviorId,
         param1: usage ?? 0,
         param2: 0,
       });
@@ -204,19 +267,76 @@ export const SlotBindingPicker = ({
     setHold(usage === 0 ? { kind: "empty" } : { kind: "mod", usage });
   };
 
-  // Toggling a key-state latch (Sticky Key / Key Toggle) wraps or unwraps the
-  // current Normal key. Re-toggling the active latch unwraps back to a plain
-  // &kp (or &none if no key is set yet); the latches are mutually exclusive.
-  const toggleWrapper = (w: { id: number; label: string }) => {
-    if (currentWrapper?.id === w.id) {
-      writeSlots({
-        tap: normalKey !== undefined ? { kind: "key", usage: normalKey } : { kind: "empty" },
-        hold: { kind: "empty" },
-      });
-    } else {
-      onBindingChanged({ behaviorId: w.id, param1: normalKey ?? 0, param2: 0 });
+  // The hold-tap identity selector: `&mt` vs a custom mod-tap (Modifier sub-mode),
+  // or `&lt` vs a custom layer-tap (Layer sub-mode). Shown whenever the user is
+  // composing a hold-tap — a Normal key set and a hold sub-mode — even before a
+  // value is picked, so it's discoverable (the choice applies the moment a
+  // modifier/layer is added). Only shown when there's a choice to make.
+  const identityOptions = holdMode === "mod" ? modTapOptions : layerTapOptions;
+  const showHoldTapIdentity =
+    slots.tap.kind === "key" && (identityOptions?.length ?? 0) > 1;
+  // A held identity from the *other* family (a stale id after switching sub-mode)
+  // isn't in this list, so fall back to the default (first) entry.
+  const activeHoldTapId =
+    identityOptions?.some((o) => o.id === holdTapId)
+      ? holdTapId
+      : identityOptions?.[0]?.id;
+  const chooseHoldTap = (id: number) => {
+    setHoldTapId(id);
+    // If it's already a real hold-tap (a modifier/layer is set), re-derive now;
+    // otherwise the choice waits in local state and applies when one is added.
+    if (slots.hold.kind !== "empty") {
+      const derived = deriveBinding({ ...slots, holdTapId: id }, registry);
+      if (derived) onBindingChanged(derived);
     }
   };
+
+  // The latched value (the key or layer) rides along in param1 across the whole
+  // family, so toggling just swaps the behavior id and keeps param1.
+  const latchParam = binding.param1;
+  // Unwrap to the family base: a layer goes straight to &to <layer>; a key goes
+  // through the slot model so an empty key collapses to &none rather than &kp 0.
+  const unwrapLatch = () => {
+    if (isLayerFamily && activeLatch.base !== undefined) {
+      onBindingChanged({ behaviorId: activeLatch.base, param1: latchParam, param2: 0 });
+    } else {
+      writeSlots({
+        tap: latchParam ? { kind: "key", usage: latchParam } : { kind: "empty" },
+        hold: { kind: "empty" },
+      });
+    }
+  };
+  // Toggling Sticky / Toggle wraps the current binding into the matching family
+  // variant, or unwraps to the base when it's already active (mutually exclusive).
+  const toggleLatch = (variant: "sticky" | "toggle") => {
+    const active = variant === "sticky" ? isSticky : isToggle;
+    const targetId = variant === "sticky" ? activeLatch.sticky : activeLatch.toggle;
+    if (active) unwrapLatch();
+    else if (targetId !== undefined)
+      onBindingChanged({ behaviorId: targetId, param1: latchParam, param2: 0 });
+  };
+
+  // Picking a To-Layer tile (from the Layer tab) while a latch is active keeps
+  // the latch and retargets it to that layer (&to -> &sl/&tog) — so switching a
+  // key latch onto a layer preserves the Sticky/Toggle choice. Other behavior
+  // tiles (Mouse / System) pass through unchanged.
+  const handleSelectBinding = (b: BehaviorBinding) => {
+    if (layerLatch && b.behaviorId === layerLatch.base) {
+      if (isSticky && layerLatch.sticky !== undefined)
+        return onBindingChanged({ behaviorId: layerLatch.sticky, param1: b.param1, param2: 0 });
+      if (isToggle && layerLatch.toggle !== undefined)
+        return onBindingChanged({ behaviorId: layerLatch.toggle, param1: b.param1, param2: 0 });
+    }
+    onBindingChanged(b);
+  };
+
+  // The generic Sticky / Toggle checkboxes — only those the current family
+  // actually exposes (capability-aware).
+  const latchOptions: { variant: "sticky" | "toggle"; label: string; active: boolean }[] = [];
+  if (activeLatch.sticky !== undefined)
+    latchOptions.push({ variant: "sticky", label: "Sticky", active: isSticky });
+  if (activeLatch.toggle !== undefined)
+    latchOptions.push({ variant: "toggle", label: "Toggle", active: isToggle });
 
   const derivedName = (() => {
     const core = registry.coreById.get(binding.behaviorId);
@@ -256,37 +376,35 @@ export const SlotBindingPicker = ({
           </code>
         )}
 
-        {/* Key-state latch (Sticky Key / Key Toggle) wraps the Normal key (→ &sk
-            / &kt); it's rare and mutually exclusive with Hold mode, so it lives
-            here as a compact control rather than in the slot surface. The key is
-            still picked from the grid below. Disabled while Hold mode is on. */}
-        {keyStateWrappers && keyStateWrappers.length > 0 && (
+        {/* Generic Sticky / Toggle latch: wraps the current binding into its
+            family variant (key → &sk/&kt, layer → &sl/&tog) keeping the param.
+            Mutually exclusive with Hold mode, so disabled while a hold is set. */}
+        {latchOptions.length > 0 && (
           <div
             className="ml-auto flex items-center gap-3"
             role="group"
-            aria-label="Key state latch"
+            aria-label="Sticky / toggle latch"
           >
             <span className="text-xs uppercase tracking-widest font-bold text-primary">
               Latch
             </span>
-            {keyStateWrappers.map((w) => {
-              const active = currentWrapper?.id === w.id;
-              const disabled = holdOpen && !active;
+            {latchOptions.map((o) => {
+              const disabled = holdOpen && !o.active;
               return (
                 <label
-                  key={w.id}
+                  key={o.variant}
                   className={`flex items-center gap-1.5 select-none text-sm ${
                     disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
                   }`}
                 >
                   <input
                     type="checkbox"
-                    checked={active}
+                    checked={o.active}
                     disabled={disabled}
-                    onChange={() => toggleWrapper(w)}
+                    onChange={() => toggleLatch(o.variant)}
                     className="w-4 h-4 accent-primary cursor-pointer disabled:cursor-not-allowed"
                   />
-                  {w.label}
+                  {o.label}
                 </label>
               );
             })}
@@ -299,19 +417,19 @@ export const SlotBindingPicker = ({
           plain &kp reads as Normal-only, a &mo as Hold-mode-only. */}
       <div className="flex gap-3">
         {/* Hold mode adds a different action when held (→ &mt / &lt / &mo). A
-            key-state latch (Sticky Key / Key Toggle) has no hold half, so the
-            toggle is disabled while a latch is active. */}
+            latched binding (Sticky / Toggle) has no hold half, so the toggle is
+            disabled while a latch is active. */}
         <div className="w-52 shrink-0 flex flex-col gap-2 border-r pr-3">
           <label
             className={`flex items-center gap-2 select-none ${
-              currentWrapper ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+              isLatched ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
             }`}
           >
             <input
               type="checkbox"
               checked={holdOpen}
               onChange={toggleHoldMode}
-              disabled={!!currentWrapper}
+              disabled={isLatched}
               className="w-4 h-4 accent-primary cursor-pointer disabled:cursor-not-allowed"
               aria-label="Hold mode"
             />
@@ -389,11 +507,40 @@ export const SlotBindingPicker = ({
                   })}
                 </div>
               )}
+
+              {/* Hold-tap identity: which behavior a key+hold fill becomes when the
+                  keymap defines custom hold-taps alongside the standard &mt / &lt
+                  (Mod-Tap in the Modifier sub-mode, Layer-Tap in Layer; §8 Q2). */}
+              {showHoldTapIdentity && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide font-semibold text-base-content/60">
+                    Hold-tap
+                  </span>
+                  <div
+                    className="flex flex-wrap"
+                    role="radiogroup"
+                    aria-label="Hold-tap behavior"
+                  >
+                    {identityOptions!.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={activeHoldTapId === o.id}
+                        onClick={() => chooseHoldTap(o.id)}
+                        className={segmentClass(activeHoldTapId === o.id)}
+                      >
+                        {o.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <p className={helpClass}>
-              {currentWrapper
-                ? `A ${currentWrapper.label} latches a key — it has no hold.`
+              {isLatched
+                ? "A latched binding has no hold."
                 : "A different action while held — a modifier or layer."}
             </p>
           )}
@@ -406,10 +553,8 @@ export const SlotBindingPicker = ({
               <span className="text-sm font-medium">
                 {tapLabel({ kind: "key", usage: normalKey }, layout)}
               </span>
-            ) : currentWrapper ? (
-              <span className={helpClass}>
-                Pick the key to {currentWrapper.label.toLowerCase()}.
-              </span>
+            ) : keyLatched ? (
+              <span className={helpClass}>Pick the key to latch.</span>
             ) : (
               <span className={helpClass}>The key sent on a normal press.</span>
             )}
@@ -433,10 +578,10 @@ export const SlotBindingPicker = ({
             onValueChanged={setNormalKey}
             clearTiles={clearTiles}
             extraTabs={behaviorTabs}
-            basicBehaviorTiles={basicBehaviorTiles}
+            specialTiles={specialTiles}
             activeBinding={binding}
-            onSelectBinding={onBindingChanged}
-            keyOnly={!!currentWrapper}
+            onSelectBinding={handleSelectBinding}
+            keyOnly={keyLatched}
             inline
             search={search}
             onSearchChange={setSearch}
