@@ -10,6 +10,7 @@ import {
   BehaviorTile,
   BindingTileTab,
   isLayerTileable,
+  isParameterless,
   isParamTileable,
   isTileable,
   layerTileBindingsFor,
@@ -125,6 +126,13 @@ function classifyBehavior(b: GetBehaviorDetailsResponse): string {
   return "Other";
 }
 
+// A behavior shown as a keycap tile in the Normal grid's strip (Mouse / System),
+// rather than as a chip in the residual area below. Pure (classify + tile shape),
+// so it lives at module scope and stays a stable reference for the memos.
+function isStripBehavior(b: GetBehaviorDetailsResponse): boolean {
+  return isTileable(b) && STRIP_GROUPS[classifyBehavior(b)] !== undefined;
+}
+
 export const BehaviorBindingPicker = ({
   binding,
   layers,
@@ -182,29 +190,40 @@ export const BehaviorBindingPicker = ({
     [behaviors]
   );
 
-  // A behavior shown as a keycap tile in the Normal grid's strip (Mouse /
-  // System), rather than as a chip in the residual area below.
-  const isStripBehavior = (b: GetBehaviorDetailsResponse) =>
-    isTileable(b) && STRIP_GROUPS[classifyBehavior(b)] !== undefined;
-
+  // Behaviors edited on the slot surface are hidden from the residual area: the
+  // four cores (via derivedChipIds), the clear tiles, and now any custom hold-tap
+  // — the `&mt` shape (mod-tap family) and the `&lt` shape (layer-tap family) —
+  // routed into Hold mode with an identity choice (issue #16 §8 Q2). `&mt`/`&lt`
+  // themselves are already cores.
   const hiddenIds = useMemo(
     () =>
-      new Set([...clearBehaviors.map((b) => b.id), ...derivedChipIds]),
-    [clearBehaviors, derivedChipIds]
+      new Set([
+        ...clearBehaviors.map((b) => b.id),
+        ...derivedChipIds,
+        ...registry.modTapIds,
+        ...registry.layerTapIds,
+      ]),
+    [clearBehaviors, derivedChipIds, registry]
   );
 
-  // The Basic "flavor" behaviors leave the residual chip area (issue #16, Step
-  // 3b). They split by shape: the parameterless ones (Caps Word / Key Repeat /
-  // Grave-Escape) are one-tap finished tiles in the Normal grid's Basic tab; the
-  // single-key ones (Sticky Key / Key Toggle) are key-state latches on the slot
-  // surface. (Key Press also has the single-key shape but is a hidden core
-  // behavior, so hiddenIds already excludes it.)
-  // Memoized so they're stable deps for the grouping memos below (they only
-  // change with hiddenIds), keeping react-hooks/exhaustive-deps satisfied
-  // without re-running the memos every render.
-  const isBasicFinishedTile = useCallback(
+  // The "flavor" behaviors leave the residual chip area (issue #16). They split
+  // by shape: the single-key ones (Sticky Key / Key Toggle) are key-state latches
+  // on the slot surface (isBasicWrapper); the parameterless ones are one-tap
+  // tiles (isSpecialTile). (Key Press also has the single-key shape but is a
+  // hidden core behavior, so hiddenIds already excludes it.) Both are memoized so
+  // they're stable deps for the grouping memos below — only changing with
+  // hiddenIds — keeping react-hooks/exhaustive-deps satisfied.
+  //
+  // isSpecialTile: a *recognized standard* parameterless flavor behavior (Caps
+  // Word / Key Repeat / Grave-Escape — the Basic group). They render in the
+  // Apps/Media/Special tab. Custom (unrecognized) behaviors don't land here even
+  // when parameterless — they go to the Custom tab (isCustomTileBehavior), so
+  // "Special" stays the curated standard set and "Custom" holds your own.
+  const isSpecialTile = useCallback(
     (b: GetBehaviorDetailsResponse) =>
-      classifyBehavior(b) === "Basic" && !hiddenIds.has(b.id) && isTileable(b),
+      classifyBehavior(b) === "Basic" &&
+      !hiddenIds.has(b.id) &&
+      isParameterless(b),
     [hiddenIds]
   );
   const isBasicWrapper = useCallback(
@@ -228,6 +247,21 @@ export const BehaviorBindingPicker = ({
     [hiddenIds]
   );
 
+  // A custom (firmware-extension) tile-able behavior that we don't recognize as a
+  // standard — classified "Other" (not a standard group, not a mouse/hold-tap
+  // shape). Covers both a parameterless custom (e.g. Num Word) and a custom enum/
+  // range (e.g. an LED-mode selector): all of *your* tile-able behaviors gather in
+  // one "Custom" tab in the Normal grid's strip, rather than the residual area
+  // (issue #16 — draining the residual escape hatch). Hold-tap-shaped customs go
+  // to Hold mode instead (by interaction shape), so they're not here.
+  const isCustomTileBehavior = useCallback(
+    (b: GetBehaviorDetailsResponse) =>
+      classifyBehavior(b) === "Other" &&
+      !hiddenIds.has(b.id) &&
+      isTileable(b),
+    [hiddenIds]
+  );
+
   // Flat category map for the residual "More behaviors" area. None / Transparent
   // surface as keycap tiles in the key grid, the four core behaviors live on the
   // slot surface, and the single-action tile behaviors moved into the Normal
@@ -237,7 +271,12 @@ export const BehaviorBindingPicker = ({
     for (const b of sortedBehaviors) {
       if (hiddenIds.has(b.id)) continue;
       if (isStripBehavior(b)) continue;
-      if (isBasicFinishedTile(b) || isBasicWrapper(b) || isLayerTabBehavior(b))
+      if (
+        isSpecialTile(b) ||
+        isBasicWrapper(b) ||
+        isLayerTabBehavior(b) ||
+        isCustomTileBehavior(b)
+      )
         continue;
       const group = classifyBehavior(b);
       if (!out[group]) out[group] = [];
@@ -247,9 +286,10 @@ export const BehaviorBindingPicker = ({
   }, [
     sortedBehaviors,
     hiddenIds,
-    isBasicFinishedTile,
+    isSpecialTile,
     isBasicWrapper,
     isLayerTabBehavior,
+    isCustomTileBehavior,
   ]);
 
   // The slot surface offers one generic "Sticky / Toggle" latch that maps to the
@@ -276,6 +316,22 @@ export const BehaviorBindingPicker = ({
       toggle: behaviorIdByName.get("Toggle Layer"),
     }),
     [behaviorIdByName]
+  );
+
+  // The hold-tap identity choices for the Hold-mode surface: the standard `&mt` /
+  // `&lt` plus any custom hold-taps of the same shape (issue #16 §8 Q2). The slot
+  // surface shows a selector only when a family has more than one.
+  const nameById = useCallback(
+    (id: number) => behaviors.find((b) => b.id === id)?.displayName ?? "",
+    [behaviors]
+  );
+  const modTapOptions = useMemo(
+    () => registry.modTapIds.map((id) => ({ id, name: nameById(id) })),
+    [registry, nameById]
+  );
+  const layerTapOptions = useMemo(
+    () => registry.layerTapIds.map((id) => ({ id, name: nameById(id) })),
+    [registry, nameById]
   );
 
   // The whole-binding behavior tabs for the Normal strip: a Layer tab (To Layer,
@@ -307,17 +363,23 @@ export const BehaviorBindingPicker = ({
       );
       tabs.push({
         name: "Layer",
-        sections: [
-          { heading: "To Layer", tiles: layerTileBindingsFor(toLayer, layers) ?? [] },
-        ],
+        // No section heading: the latch (Sticky / Toggle), not a label, decides
+        // To / Sticky / Toggle, so "To Layer" would misread as the only option.
+        sections: [{ tiles: layerTileBindingsFor(toLayer, layers) ?? [] }],
         matchFamily,
       });
     }
     if (sections.Mouse.length) tabs.push({ name: "Mouse", sections: sections.Mouse });
     if (sections.System.length)
       tabs.push({ name: "System", sections: sections.System });
+    // Custom tab: firmware-extension enum/range behaviors that fit no known strip
+    // group, one labelled section each — so they leave the residual area too.
+    const custom = sortedBehaviors
+      .filter(isCustomTileBehavior)
+      .map((b) => ({ heading: b.displayName, tiles: tileBindingsFor(b) ?? [] }));
+    if (custom.length) tabs.push({ name: "Custom", sections: custom });
     return tabs;
-  }, [sortedBehaviors, hiddenIds, layers, layerLatch]);
+  }, [sortedBehaviors, hiddenIds, layers, layerLatch, isCustomTileBehavior]);
 
   // The rarely-used one-tap flavor tiles (Caps Word / Key Repeat / Grave-Escape),
   // one finished binding each, appended into the Apps/Media/Special tab.
@@ -325,10 +387,10 @@ export const BehaviorBindingPicker = ({
   const specialTiles = useMemo<BehaviorTile[]>(() => {
     const out: BehaviorTile[] = [];
     for (const b of sortedBehaviors) {
-      if (isBasicFinishedTile(b)) out.push(...(tileBindingsFor(b) ?? []));
+      if (isSpecialTile(b)) out.push(...(tileBindingsFor(b) ?? []));
     }
     return out;
-  }, [sortedBehaviors, isBasicFinishedTile]);
+  }, [sortedBehaviors, isSpecialTile]);
 
   const currentBehavior = behaviors.find((b) => b.id === behaviorId);
   const currentGroup = currentBehavior
@@ -521,6 +583,8 @@ export const BehaviorBindingPicker = ({
         specialTiles={specialTiles}
         keyLatch={keyLatch}
         layerLatch={layerLatch}
+        modTapOptions={modTapOptions}
+        layerTapOptions={layerTapOptions}
         currentBehaviorName={currentBehavior?.displayName}
         bindingCode={formatBinding(
           currentBinding,

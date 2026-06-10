@@ -48,6 +48,16 @@ export type HoldSlot =
 export interface Slots {
   tap: TapSlot;
   hold: HoldSlot;
+  /**
+   * Which hold-tap-family behavior a `key + hold` fill derives to. Covers both
+   * families: on a `key + mod` fill it picks the Mod-Tap behavior (default `&mt`),
+   * on a `key + layer` fill the Layer-Tap behavior (default `&lt`). A keymap may
+   * define custom hold-taps of either shape (e.g. `homerow_mods`,
+   * `homerow_layers`), so the identity is a sub-mode choice (design §3b / §8 Q2).
+   * Absent ⇒ the standard core. The id is matched against the family that fits the
+   * current hold, so a stale id from the other family is simply ignored.
+   */
+  holdTapId?: number;
 }
 
 // =============================================================================
@@ -80,6 +90,33 @@ export const CORE_LABELS: Record<CoreBehavior, string> = CORE_DISPLAY_NAMES;
 export interface DerivationRegistry {
   idByCore: Partial<Record<CoreBehavior, number>>;
   coreById: Map<number, CoreBehavior>;
+  /**
+   * Behavior ids of the mod-tap family — a `mod` param then a `key` param, the
+   * `&mt` shape. The standard `&mt` is first (when present), then any custom
+   * hold-taps the firmware exposes (e.g. `homerow_mods`). The Hold-mode surface
+   * offers these as the Mod-Tap identity choice; a `key + mod` fill derives to
+   * the chosen one (default `&mt`).
+   */
+  modTapIds: number[];
+  /**
+   * Behavior ids of the layer-tap family — a `layer` param then a `key` param,
+   * the `&lt` shape. The standard `&lt` is first, then any custom layer-taps. The
+   * Hold-mode Layer sub-mode offers these as the Layer-Tap identity choice; a
+   * `key + layer` fill derives to the chosen one (default `&lt`).
+   */
+  layerTapIds: number[];
+}
+
+/** A mod-tap-shaped behavior: a HID `mod` param then a HID `key` param. */
+function isModTapShape(b: GetBehaviorDetailsResponse): boolean {
+  const set = b.metadata?.[0];
+  return !!set?.param1?.[0]?.hidUsage && !!set?.param2?.[0]?.hidUsage;
+}
+
+/** A layer-tap-shaped behavior: a `layer` param then a HID `key` param. */
+function isLayerTapShape(b: GetBehaviorDetailsResponse): boolean {
+  const set = b.metadata?.[0];
+  return !!set?.param1?.[0]?.layerId && !!set?.param2?.[0]?.hidUsage;
 }
 
 export function buildDerivationRegistry(
@@ -96,7 +133,21 @@ export function buildDerivationRegistry(
       coreById.set(behavior.id, core);
     }
   }
-  return { idByCore, coreById };
+  // Mod-tap family: the standard `&mt` first, then any custom hold-taps of the
+  // same shape, in firmware order. (`&mt` itself matches isModTapShape, so skip
+  // it in the loop to avoid listing it twice.) Layer-tap family is the same, for
+  // the `&lt` shape.
+  const modTapIds: number[] = [];
+  if (idByCore.mt !== undefined) modTapIds.push(idByCore.mt);
+  for (const b of behaviors) {
+    if (b.id !== idByCore.mt && isModTapShape(b)) modTapIds.push(b.id);
+  }
+  const layerTapIds: number[] = [];
+  if (idByCore.lt !== undefined) layerTapIds.push(idByCore.lt);
+  for (const b of behaviors) {
+    if (b.id !== idByCore.lt && isLayerTapShape(b)) layerTapIds.push(b.id);
+  }
+  return { idByCore, coreById, modTapIds, layerTapIds };
 }
 
 // =============================================================================
@@ -198,10 +249,26 @@ export function deriveBinding(
     switch (hold.kind) {
       case "empty":
         return bindingFor(reg, "kp", tap.usage, 0);
-      case "mod":
-        return bindingFor(reg, "mt", hold.usage, tap.usage);
-      case "layer":
-        return bindingFor(reg, "lt", hold.layerId, tap.usage);
+      case "mod": {
+        // A real Mod-Tap derives to the chosen mod-tap-family behavior (default
+        // `&mt`); a custom hold-tap of the same shape uses the same param order.
+        const id =
+          slots.holdTapId !== undefined && reg.modTapIds.includes(slots.holdTapId)
+            ? slots.holdTapId
+            : reg.idByCore.mt;
+        if (id === undefined) return null;
+        return { behaviorId: id, param1: hold.usage, param2: tap.usage };
+      }
+      case "layer": {
+        // A real Layer-Tap derives to the chosen layer-tap-family behavior
+        // (default `&lt`); a custom layer-tap uses the same param order.
+        const id =
+          slots.holdTapId !== undefined && reg.layerTapIds.includes(slots.holdTapId)
+            ? slots.holdTapId
+            : reg.idByCore.lt;
+        if (id === undefined) return null;
+        return { behaviorId: id, param1: hold.layerId, param2: tap.usage };
+      }
     }
   }
 
@@ -234,7 +301,26 @@ export function bindingToSlots(
   reg: DerivationRegistry
 ): Slots | null {
   const core = reg.coreById.get(binding.behaviorId);
-  if (!core) return null;
+  if (!core) {
+    // A custom hold-tap decomposes like its standard sibling, carrying its
+    // identity so the Hold-mode surface can re-derive and highlight it: the `&mt`
+    // shape → Mod-Tap, the `&lt` shape → Layer-Tap.
+    if (reg.modTapIds.includes(binding.behaviorId)) {
+      return {
+        tap: { kind: "key", usage: binding.param2 },
+        hold: { kind: "mod", usage: binding.param1 },
+        holdTapId: binding.behaviorId,
+      };
+    }
+    if (reg.layerTapIds.includes(binding.behaviorId)) {
+      return {
+        tap: { kind: "key", usage: binding.param2 },
+        hold: { kind: "layer", layerId: binding.param1 },
+        holdTapId: binding.behaviorId,
+      };
+    }
+    return null;
+  }
 
   switch (core) {
     case "kp":
@@ -250,11 +336,13 @@ export function bindingToSlots(
       return {
         tap: { kind: "key", usage: binding.param2 },
         hold: { kind: "mod", usage: binding.param1 },
+        holdTapId: binding.behaviorId,
       };
     case "lt":
       return {
         tap: { kind: "key", usage: binding.param2 },
         hold: { kind: "layer", layerId: binding.param1 },
+        holdTapId: binding.behaviorId,
       };
     case "mo":
       return {

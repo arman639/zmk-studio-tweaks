@@ -4,6 +4,7 @@ import type { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-clie
 
 import {
   isLayerTileable,
+  isParameterless,
   isParamTileable,
   isTileable,
   layerTileBindingsFor,
@@ -159,6 +160,24 @@ describe("isParamTileable (key-state latch behaviors: Sticky Key / Key Toggle)",
       },
     ]);
     expect(isParamTileable(mt)).toBe(false);
+  });
+});
+
+describe("isParameterless (Special one-tap tiles)", () => {
+  it("is true for empty metadata and for empty param sets", () => {
+    expect(isParameterless(behavior(11, "Reset", []))).toBe(true);
+    expect(
+      isParameterless(behavior(3, "Caps Word", [{ param1: [], param2: [] }]))
+    ).toBe(true);
+    // A custom parameterless behavior (e.g. Num Word) qualifies too.
+    expect(isParameterless(behavior(25, "Num Word", []))).toBe(true);
+  });
+
+  it("is false once any parameter slot takes a value", () => {
+    const sk = behavior(2, "Sticky Key", [
+      { param1: [{ name: "key", hidUsage: HID }], param2: [] },
+    ]);
+    expect(isParameterless(sk)).toBe(false);
   });
 });
 

@@ -73,6 +73,19 @@ export interface SlotBindingPickerProps {
    */
   layerLatch?: LatchConfig;
   /**
+   * The Mod-Tap identity choices: `&mt` plus any custom hold-taps of the same
+   * shape (e.g. `homerow_mods`). When more than one exists, the Hold-mode
+   * Modifier panel shows a selector so a `key + mod` fill can derive to the
+   * chosen behavior (issue #16 §8 Q2). First entry is the default (`&mt`).
+   */
+  modTapOptions?: { id: number; name: string }[];
+  /**
+   * The Layer-Tap identity choices: `&lt` plus any custom layer-taps. Same as
+   * {@link modTapOptions} but for the Hold-mode Layer sub-mode (a `key + layer`
+   * fill). First entry is the default (`&lt`).
+   */
+  layerTapOptions?: { id: number; name: string }[];
+  /**
    * Display name of the current behavior when it is *not* a slot-derivable core
    * (e.g. a Mouse / System tile). Shown in the reverse-lookup label instead of
    * "No matching behavior".
@@ -134,6 +147,8 @@ export const SlotBindingPicker = ({
   specialTiles,
   keyLatch,
   layerLatch,
+  modTapOptions,
+  layerTapOptions,
   currentBehaviorName,
   bindingCode,
 }: SlotBindingPickerProps) => {
@@ -196,8 +211,19 @@ export const SlotBindingPicker = ({
     if (holdKind !== "empty") setHoldMode(holdKind);
   }, [holdKind]);
 
+  // The chosen Mod-Tap identity (`&mt` or a custom hold-tap). Kept as local state
+  // so it can be picked *before* a modifier exists — a plain `&kp` can't carry the
+  // identity, so we hold it here and inject it on derive (a key+mod fill becomes
+  // the chosen behavior). Reseeded from the binding whenever the bound key changes.
+  const [holdTapId, setHoldTapId] = useState<number | undefined>(slots.holdTapId);
+  useEffect(() => {
+    setHoldTapId(slots.holdTapId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [binding.behaviorId, binding.param1, binding.param2]);
+
   const writeSlots = (next: Slots) => {
-    const derived = deriveBinding(next, registry);
+    // Inject the chosen identity so a key+mod fill derives to it (default `&mt`).
+    const derived = deriveBinding({ ...next, holdTapId }, registry);
     if (derived) onBindingChanged(derived);
   };
 
@@ -237,6 +263,30 @@ export const SlotBindingPicker = ({
     const bits = modBits ^ bit;
     const usage = usageFromModifierSet(bits);
     setHold(usage === 0 ? { kind: "empty" } : { kind: "mod", usage });
+  };
+
+  // The hold-tap identity selector: `&mt` vs a custom mod-tap (Modifier sub-mode),
+  // or `&lt` vs a custom layer-tap (Layer sub-mode). Shown whenever the user is
+  // composing a hold-tap — a Normal key set and a hold sub-mode — even before a
+  // value is picked, so it's discoverable (the choice applies the moment a
+  // modifier/layer is added). Only shown when there's a choice to make.
+  const identityOptions = holdMode === "mod" ? modTapOptions : layerTapOptions;
+  const showHoldTapIdentity =
+    slots.tap.kind === "key" && (identityOptions?.length ?? 0) > 1;
+  // A held identity from the *other* family (a stale id after switching sub-mode)
+  // isn't in this list, so fall back to the default (first) entry.
+  const activeHoldTapId =
+    identityOptions?.some((o) => o.id === holdTapId)
+      ? holdTapId
+      : identityOptions?.[0]?.id;
+  const chooseHoldTap = (id: number) => {
+    setHoldTapId(id);
+    // If it's already a real hold-tap (a modifier/layer is set), re-derive now;
+    // otherwise the choice waits in local state and applies when one is added.
+    if (slots.hold.kind !== "empty") {
+      const derived = deriveBinding({ ...slots, holdTapId: id }, registry);
+      if (derived) onBindingChanged(derived);
+    }
   };
 
   // The latched value (the key or layer) rides along in param1 across the whole
@@ -453,6 +503,35 @@ export const SlotBindingPicker = ({
                       </button>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Hold-tap identity: which behavior a key+hold fill becomes when the
+                  keymap defines custom hold-taps alongside the standard &mt / &lt
+                  (Mod-Tap in the Modifier sub-mode, Layer-Tap in Layer; §8 Q2). */}
+              {showHoldTapIdentity && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide font-semibold text-base-content/60">
+                    Hold-tap
+                  </span>
+                  <div
+                    className="flex flex-wrap"
+                    role="radiogroup"
+                    aria-label="Hold-tap behavior"
+                  >
+                    {identityOptions!.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={activeHoldTapId === o.id}
+                        onClick={() => chooseHoldTap(o.id)}
+                        className={segmentClass(activeHoldTapId === o.id)}
+                      >
+                        {o.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </>

@@ -657,7 +657,7 @@ const HidUsageGrid = ({
     for (const tab of extraTabs ?? []) {
       for (const section of tab.sections) {
         for (const tile of section.tiles) {
-          const haystack = `${tile.label} ${section.heading} ${tab.name}`.toLowerCase();
+          const haystack = `${tile.label} ${section.heading ?? ""} ${tab.name}`.toLowerCase();
           if (haystack.includes(trimmedSearch)) out.push(tile);
         }
       }
@@ -963,19 +963,30 @@ const HidUsageGrid = ({
             <>
               {categorizedUsages[category].map(renderUsageButton)}
               {/* The rarely-used flavor behaviors (Caps Word / Key Repeat /
-                  Grave-Escape) live here, on their own row after the media keys. */}
-              {category === APPS_MEDIA_TAB &&
-                specialTiles &&
-                specialTiles.length > 0 && (
-                  <div
-                    role="radiogroup"
-                    aria-label="Behaviors"
-                    className="flex flex-wrap gap-1 basis-full"
-                  >
-                    {specialTiles.map((t) => renderBehaviorTile(t))}
+                  Grave-Escape) get their own row after the media keys, and the
+                  None / Transparent clear caps share that row's trailing space
+                  so they don't wrap onto a line of their own. The flavor tiles
+                  stay in their own radiogroup (they're radios; the clear caps
+                  are toggle buttons). */}
+              {category === APPS_MEDIA_TAB ? (
+                ((specialTiles && specialTiles.length > 0) ||
+                  trailingClearKeycapsUsage) && (
+                  <div className="flex flex-wrap items-start gap-1 basis-full">
+                    {specialTiles && specialTiles.length > 0 && (
+                      <div
+                        role="radiogroup"
+                        aria-label="Behaviors"
+                        className="flex flex-wrap gap-1"
+                      >
+                        {specialTiles.map((t) => renderBehaviorTile(t))}
+                      </div>
+                    )}
+                    {trailingClearKeycapsUsage}
                   </div>
-                )}
-              {trailingClearKeycapsUsage}
+                )
+              ) : (
+                trailingClearKeycapsUsage
+              )}
             </>
           )}
         </TabPanel>
@@ -988,14 +999,19 @@ const HidUsageGrid = ({
           id={tab.name}
           className="min-h-[17rem] max-h-[17rem] overflow-y-auto flex flex-col gap-3 p-1 border border-t-0 rounded-b rac-focus-visible:ring-2 rac-focus-visible:ring-primary"
         >
-          {tab.sections.map((section) => (
-            <div key={section.heading} className="flex flex-col gap-1">
-              <span className="text-sm uppercase tracking-wide font-semibold text-base-content/70">
-                {section.heading}
-              </span>
+          {tab.sections.map((section, i) => (
+            <div
+              key={section.heading ?? `section-${i}`}
+              className="flex flex-col gap-1"
+            >
+              {section.heading && (
+                <span className="text-sm uppercase tracking-wide font-semibold text-base-content/70">
+                  {section.heading}
+                </span>
+              )}
               <div
                 role="radiogroup"
-                aria-label={section.heading}
+                aria-label={section.heading ?? tab.name}
                 className="flex flex-wrap gap-1"
               >
                 {section.tiles.map((t) =>

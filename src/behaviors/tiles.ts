@@ -26,9 +26,14 @@ export interface BehaviorTile {
   binding: BehaviorBinding;
 }
 
-/** A labelled run of tiles within a tab (one heading per source behavior). */
+/**
+ * A run of tiles within a tab. `heading` labels the source behavior when a tab
+ * holds several (Mouse / System); a single-section tab whose tab name already
+ * says everything (the Layer tab — the latch, not a heading, decides
+ * To / Sticky / Toggle) omits it.
+ */
 export interface BindingTileSection {
-  heading: string;
+  heading?: string;
   tiles: BehaviorTile[];
 }
 
@@ -136,6 +141,21 @@ export function tileBindingsFor(
 /** Whether a behavior renders as tiles (vs. the chip + parameter-picker flow). */
 export function isTileable(behavior: GetBehaviorDetailsResponse): boolean {
   return tileBindingsFor(behavior) !== null;
+}
+
+/**
+ * Whether a behavior takes no parameters at all — a single finished tile with
+ * nothing to pick (Caps Word / Key Repeat / Grave-Escape, and custom flavor
+ * behaviors like Num Word). These are the "Special" one-tap tiles in the Normal
+ * grid's Apps/Media/Special tab (issue #16), so a parameterless custom behavior
+ * joins them rather than sitting in the residual area.
+ */
+export function isParameterless(behavior: GetBehaviorDetailsResponse): boolean {
+  const sets = behavior.metadata;
+  if (!sets || sets.length === 0) return true;
+  return sets.every(
+    (s) => (s.param1?.length ?? 0) === 0 && (s.param2?.length ?? 0) === 0
+  );
 }
 
 /**
