@@ -2,12 +2,15 @@ import {
   Button,
   Checkbox,
   CheckboxGroup,
+  Collection,
   ComboBox,
+  Header,
   Input,
   Label,
   ListBox,
   ListBoxItem,
   Popover,
+  Section,
   Tab,
   TabList,
   TabPanel,
@@ -16,32 +19,50 @@ import {
 import { Tooltip } from "../misc/Tooltip";
 import { hid_usage_page_get_ids, hid_usage_get_metadata } from "../hid-usages";
 import { useHostLayout } from "../layouts/LayoutContext";
-import { useLocalStorageState } from "../misc/useLocalStorageState";
 import {
   ANSI_ROWS,
   BASIC_TIER_HID_IDS,
   type BasicCell,
-  ISO_ONLY_HID_IDS,
   ISO_ROWS,
-  JIS_ONLY_HID_IDS,
   JIS_ROWS,
-  KO_ONLY_HID_IDS,
   KO_ROWS,
   SPACER_ID,
 } from "../layouts/physical";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
+import type { BehaviorBinding } from "@zmkfirmware/zmk-studio-ts-client/keymap";
+import type { BehaviorTile, BindingTileTab } from "./tiles";
+import {
+  CONSUMER_MEDIA_IDS,
+  CONSUMER_PAGE,
+  OTHER_SECTION_ORDER,
+  otherSectionTitle,
+} from "./other-sections";
 
-// Two basic-tier tabs cover the whole "typing" keycode space:
-//   - Basic    -> ANSI 60% rendering
-//   - ISO/JIS  -> ISO 60% rendering + JIS extras row (¥ / `\_` / IME keys)
-// JIS users see ¥ / IME keys in the extras row rather than in their
-// physical bottom-row positions; same convention as upstream visual
-// pickers, and avoids forcing every user to pick between three shapes
-// when in practice they're mutually exclusive.
+const sameBinding = (a: BehaviorBinding, b: BehaviorBinding) =>
+  a.behaviorId === b.behaviorId && a.param1 === b.param1 && a.param2 === b.param2;
+
+// One host-adaptive basic-tier tab covers the whole "typing" keycode space,
+// rendering the shape that matches the selected host layout:
+//   - ansi -> ANSI 60%
+//   - iso  -> ISO 60% (adds NUHS / NUBS)
+//   - jis  -> JIS 60% (adds ¥ / `\_` / 変換 / 無変換 / かな)
+//   - ko   -> KO 60% (adds 한자 / 한영)
+// A US-ANSI board has no NUHS/NUBS, so they only appear once an ISO/JIS layout
+// is selected; the search box still reaches any key regardless of shape.
 const BASIC_TAB_ID = "Basic";
-const ISO_JIS_TAB_ID = "ISO/JIS";
-const BASIC_TIER_TABS: ReadonlyArray<string> = [BASIC_TAB_ID, ISO_JIS_TAB_ID];
+const BASIC_TIER_TABS: ReadonlyArray<string> = [BASIC_TAB_ID];
+
+// Tab identifiers, named once so the magic strings aren't duplicated across the
+// categorizer, the tab-order list, the panel renderer, and the modifier-row
+// visibility check. The keycode category tabs derive from a usage's metadata
+// `category`; FUNCTION_NAV_METADATA_CATEGORY is the spec's longer name we shorten.
+const FUNCTION_NAV_TAB = "Function + Nav";
+const NUMPAD_TAB = "Numpad";
+const APPS_MEDIA_TAB = "Apps/Media/Special";
+const INTERNATIONAL_TAB = "International";
+const OTHER_TAB = "Other";
+const FUNCTION_NAV_METADATA_CATEGORY = "Function + Navigation";
 
 // Standard numeric keypad layout. + and KP Enter are normally 1U×2U and 0
 // is 2U×1U on a real numpad; we keep heights uniform and only widen 0 to
@@ -105,6 +126,62 @@ export interface HidUsagePickerProps {
    */
   disabled?: boolean;
   clearTiles?: ClearTilesConfig;
+  /**
+   * Whole-binding tile tabs appended to the keycode tab strip (before "Other"),
+   * e.g. Mouse / System. Picking a tile sets the entire binding via
+   * {@link onSelectBinding} rather than the Normal key. The Normal-slot surface
+   * passes these so single-action behaviors are picked the same way a keycode
+   * is (issue #16, Step 3); other HidUsagePicker uses omit them.
+   */
+  extraTabs?: BindingTileTab[];
+  /**
+   * Rarely-used one-tap "flavor" behaviors (Caps Word / Key Repeat / Grave-
+   * Escape) appended into the **Apps/Media/Special** keycode tab (issue #16),
+   * each a finished binding set via {@link onSelectBinding}. Other HidUsagePicker
+   * uses omit them.
+   */
+  specialTiles?: BehaviorTile[];
+  /** Current full binding, used to highlight the active behavior tile / tab. */
+  activeBinding?: BehaviorBinding;
+  /** Called with the whole binding when a behavior tile is pressed. */
+  onSelectBinding?: (binding: BehaviorBinding) => void;
+  /**
+   * Restrict the grid to picking a *key* only: the whole-binding affordances
+   * (the Mouse / System behavior tabs, the one-tap flavor tiles, and the None /
+   * Transparent clear tiles) are disabled. Used while a key-state latch (Sticky
+   * Key / Key Toggle) is active, where the grid only chooses the latched key and
+   * selecting another behavior would silently drop the latch (issue #16).
+   */
+  keyOnly?: boolean;
+  /**
+   * Internal: the grid reports its effective active tab so the outer picker can
+   * place the implicit-modifier row (only on the keycode tabs where composing a
+   * modified keycode makes sense) and hide it on the behavior tabs.
+   */
+  onActiveTabChange?: (tab: string) => void;
+  /**
+   * Inline layout (the Normal-slot surface): the implicit-modifier picker is a
+   * compact **row below the grid** (shown only on the Basic / Function + Nav
+   * tabs) instead of a side column, and the grid's "Key" header + search box are
+   * suppressed so the parent can host the search on its own header row. Requires
+   * controlled {@link search} / {@link onSearchChange}. Other uses omit this and
+   * keep the side column + built-in search.
+   */
+  inline?: boolean;
+  /** Controlled search text (inline mode); the parent renders the input. */
+  search?: string;
+  /** Controlled search setter (inline mode). */
+  onSearchChange?: (search: string) => void;
+  /**
+   * Customise the implicit-modifier picker (which bakes modifiers into the
+   * picked keycode, e.g. C + L Ctrl → `LC(C)` = Ctrl+C in one keypress). Defaults
+   * to the "+ Modifier" side column; the Normal slot passes `label: "+ Send with"`.
+   */
+  modifiers?: {
+    side?: "left" | "right";
+    label?: string;
+    hint?: string;
+  };
 }
 
 enum Mods {
@@ -153,6 +230,15 @@ const HidUsageGrid = ({
   onValueChanged,
   usagePages,
   clearTiles,
+  extraTabs,
+  specialTiles,
+  activeBinding,
+  onSelectBinding,
+  keyOnly,
+  onActiveTabChange,
+  inline,
+  search: controlledSearch,
+  onSearchChange,
 }: HidUsagePickerProps) => {
   const layout = useHostLayout();
   type Usage = {
@@ -214,12 +300,16 @@ const HidUsageGrid = ({
 
     for (const usage of allUsages) {
       const metadata = hid_usage_get_metadata(usage.pageId, usage.Id, layout);
-      let category = metadata?.category || "Other";
-      // The old "Function + Navigation" metadata category covers the TKL
-      // function row + navigation cluster + arrows. We keep them in one
-      // tab — they share screen real estate cleanly without scrolling.
-      if (category === "Function + Navigation") {
-        category = "Function + Nav";
+      let category = metadata?.category || OTHER_TAB;
+      // The spec's "Function + Navigation" category covers the TKL function row
+      // + navigation cluster + arrows. We keep them in one tab — they share
+      // screen real estate cleanly without scrolling.
+      if (category === FUNCTION_NAV_METADATA_CATEGORY) {
+        category = FUNCTION_NAV_TAB;
+      }
+      // Promote the common consumer media keys out of the Other catch-all.
+      if (usage.pageId === CONSUMER_PAGE && CONSUMER_MEDIA_IDS.has(usage.Id)) {
+        category = APPS_MEDIA_TAB;
       }
       // Letters / Numbers + Punctuation always land on a basic-tier tab
       // (rendered explicitly per shape, no flat-list fallback needed) so
@@ -228,9 +318,9 @@ const HidUsageGrid = ({
         continue;
       }
       // Anything on a basic-tier shape (Tab / Caps / mods / Space / etc.,
-      // plus ISO NUHS/NUBS and JIS ¥/IME extras) is handled by the Basic
-      // or ISO/JIS tab's explicit grid — drop from category tabs so it
-      // doesn't surface twice and the auto-jump doesn't prefer a stale
+      // plus ISO NUHS/NUBS and JIS ¥/IME extras) is handled by the single
+      // host-adaptive Basic tab's explicit grid — drop from category tabs so
+      // it doesn't surface twice and the auto-jump doesn't prefer a stale
       // duplicate.
       if (usage.pageId === 7 && BASIC_TIER_HID_IDS.has(usage.Id)) {
         continue;
@@ -244,6 +334,24 @@ const HidUsageGrid = ({
 
     return categories;
   }, [allUsages, layout]);
+
+  // Group the Other catch-all into labelled sections for the combobox.
+  const otherSections = useMemo(() => {
+    const groups = new Map<string, Usage[]>();
+    for (const u of categorizedUsages[OTHER_TAB] ?? []) {
+      const title = otherSectionTitle(u.Name, u.pageId);
+      const bucket = groups.get(title);
+      if (bucket) bucket.push(u);
+      else groups.set(title, [u]);
+    }
+    return [...groups.entries()]
+      .sort(
+        (a, b) =>
+          OTHER_SECTION_ORDER.indexOf(a[0] as (typeof OTHER_SECTION_ORDER)[number]) -
+          OTHER_SECTION_ORDER.indexOf(b[0] as (typeof OTHER_SECTION_ORDER)[number])
+      )
+      .map(([name, items]) => ({ name, items }));
+  }, [categorizedUsages]);
 
   // null usage = transparent spacer cell (Enter-spans-rows placeholder).
   type ShapeRowItem = { usage: Usage | null; w?: number };
@@ -270,25 +378,23 @@ const HidUsageGrid = ({
     [allUsages]
   );
 
-  const ansiRows = useMemo(() => buildShapeRows(ANSI_ROWS), [buildShapeRows]);
-  // ISO/JIS tab shape follows the active host layout's `physical` hint
-  // so the picker mirrors the user's actual keyboard:
-  //   - JIS  -> Japanese 5-row shape with ¥, `\_`, 無変換, 変換, かな
-  //   - KO   -> Korean ANSI-shape with 한자 / 한/영 flanking Space
-  //   - ANSI -> ISO shape (fallback that still lets US-ANSI users bind
-  //             ISO compat keys NUHS / NUBS without leaving the tab)
-  //   - ISO  -> ISO shape
-  const altShape = useMemo(() => {
+  // The single Basic tab's shape follows the active host layout's `physical`
+  // hint so the picker mirrors the user's actual keyboard:
+  //   - ANSI -> ANSI shape (no NUHS / NUBS — the board doesn't have them)
+  //   - ISO  -> ISO shape (adds NUHS / NUBS)
+  //   - JIS  -> Japanese shape with ¥, `\_`, 無変換, 変換, かな
+  //   - KO   -> Korean shape with 한자 / 한/영 flanking Space
+  const basicShape = useMemo(() => {
     switch (layout.physical) {
       case "jis": return JIS_ROWS;
       case "ko":  return KO_ROWS;
       case "iso": return ISO_ROWS;
-      default:    return ISO_ROWS;
+      default:    return ANSI_ROWS;
     }
   }, [layout.physical]);
-  const isoOrJisRows = useMemo(
-    () => buildShapeRows(altShape),
-    [buildShapeRows, altShape]
+  const basicRows = useMemo(
+    () => buildShapeRows(basicShape),
+    [buildShapeRows, basicShape]
   );
 
   const UNIT_PX = 48;
@@ -320,7 +426,7 @@ const HidUsageGrid = ({
       }
       return out;
     });
-    const extras = (categorizedUsages["Numpad"] || []).filter(
+    const extras = (categorizedUsages[NUMPAD_TAB] || []).filter(
       (u) => !placed.has(u)
     );
     if (extras.length) {
@@ -411,11 +517,11 @@ const HidUsageGrid = ({
 
   const sortedCategories = useMemo(() => {
     const categoryOrder = [
-      "Function + Nav",
-      "Numpad",
-      "Apps/Media/Special",
-      "International",
-      "Other",
+      FUNCTION_NAV_TAB,
+      NUMPAD_TAB,
+      APPS_MEDIA_TAB,
+      INTERNATIONAL_TAB,
+      OTHER_TAB,
     ];
     return Object.keys(categorizedUsages).sort((a, b) => {
       const indexA = categoryOrder.indexOf(a);
@@ -427,23 +533,28 @@ const HidUsageGrid = ({
     });
   }, [categorizedUsages]);
 
-  // Top-level tab order: ANSI basic, ISO/JIS, then the category tabs.
-  const allTabs = useMemo(
-    () => [...BASIC_TIER_TABS, ...sortedCategories],
-    [sortedCategories]
+  // Top-level tab order: ANSI basic, ISO/JIS, the keycode category tabs, then
+  // the whole-binding behavior tabs (Mouse / System), and "Other" stays last.
+  const extraTabNames = useMemo(
+    () => (extraTabs ?? []).map((t) => t.name),
+    [extraTabs]
   );
+  const allTabs = useMemo(() => {
+    const cats = sortedCategories.filter((c) => c !== OTHER_TAB);
+    const other = sortedCategories.includes(OTHER_TAB) ? [OTHER_TAB] : [];
+    return [...BASIC_TIER_TABS, ...cats, ...extraTabNames, ...other];
+  }, [sortedCategories, extraTabNames]);
 
-  const [search, setSearch] = useState("");
+  // Search is controlled in inline mode (the parent hosts the input on its own
+  // header row); otherwise the grid owns it and renders its own "Key" header.
+  const [internalSearch, setInternalSearch] = useState("");
+  const search = onSearchChange ? controlledSearch ?? "" : internalSearch;
+  const setSearch = onSearchChange ?? setInternalSearch;
   const trimmedSearch = search.trim().toLowerCase();
 
-  // Auto-select the tab containing the current value when it changes.
-  // Keys in the basic-tier (letters / numbers / mods / etc.) prefer the
-  // user's last-used basic-tier tab (Basic vs ISO/JIS), persisted to
-  // localStorage so a JIS user doesn't click ISO/JIS every time.
-  const [preferredBasicTab, setPreferredBasicTab] = useLocalStorageState<string>(
-    "picker-basic-tab",
-    BASIC_TAB_ID
-  );
+  // Auto-select the tab containing the current value when it changes. Every
+  // basic-tier key (letters / numbers / mods / shape-specific NUHS / ¥ / IME)
+  // lives on the single host-adaptive Basic tab now.
   const [activeTab, setActiveTab] = useState<string | null>(null);
   useEffect(() => {
     if (value === undefined || value === 0) {
@@ -454,18 +565,7 @@ const HidUsageGrid = ({
     const page = (masked >> 16) & 0xffff;
     const usageId = masked & 0xffff;
     if (page === 7 && BASIC_TIER_HID_IDS.has(usageId)) {
-      // Shape-specific keys (ISO NUHS/NUBS, JIS ¥/IME, Korean 한자/
-      // 한/영) force the ISO/JIS tab; ANSI-shared keys go wherever the
-      // user last was.
-      if (
-        ISO_ONLY_HID_IDS.has(usageId) ||
-        JIS_ONLY_HID_IDS.has(usageId) ||
-        KO_ONLY_HID_IDS.has(usageId)
-      ) {
-        setActiveTab(ISO_JIS_TAB_ID);
-      } else {
-        setActiveTab(preferredBasicTab);
-      }
+      setActiveTab(BASIC_TAB_ID);
       return;
     }
     for (const cat of sortedCategories) {
@@ -477,17 +577,52 @@ const HidUsageGrid = ({
         return;
       }
     }
-  }, [value, categorizedUsages, sortedCategories, preferredBasicTab]);
+  }, [value, categorizedUsages, sortedCategories]);
 
-  const onTabChange = useCallback(
-    (k: string) => {
-      setActiveTab(k);
-      if (k === BASIC_TAB_ID || k === ISO_JIS_TAB_ID) {
-        setPreferredBasicTab(k);
+  // When the bound behavior is one of the whole-binding tiles (Mouse / System),
+  // jump to its tab. Keyed on the binding's *values* (not the object identity)
+  // so it only fires when the binding actually changes — otherwise it would snap
+  // the tab back to Mouse/System the moment the user clicks a keycode tab to
+  // pick a Normal key.
+  useEffect(() => {
+    if (!activeBinding) return;
+    // A flavor behavior (Caps Word / Key Repeat / Grave-Escape) lives in the
+    // Apps/Media/Special tab, so jump there when one is the current binding.
+    for (const tile of specialTiles ?? []) {
+      if (sameBinding(tile.binding, activeBinding)) {
+        setActiveTab(APPS_MEDIA_TAB);
+        return;
       }
-    },
-    [setPreferredBasicTab]
-  );
+    }
+    for (const t of extraTabs ?? []) {
+      const hit =
+        t.matchFamily?.includes(activeBinding.behaviorId) ||
+        t.sections.some((s) =>
+          s.tiles.some((tile) => sameBinding(tile.binding, activeBinding))
+        );
+      if (hit) {
+        setActiveTab(t.name);
+        return;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeBinding?.behaviorId,
+    activeBinding?.param1,
+    activeBinding?.param2,
+    extraTabs,
+    specialTiles,
+  ]);
+
+  const onTabChange = useCallback((k: string) => setActiveTab(k), []);
+
+  // Report the effective active tab so the outer picker can make the modifier
+  // column tab-aware. `activeTab` is null until a value/binding forces it, so
+  // fall back to the tab react-aria actually shows (the Basic tab).
+  const effectiveActiveTab = activeTab ?? BASIC_TAB_ID;
+  useEffect(() => {
+    onActiveTabChange?.(effectiveActiveTab);
+  }, [effectiveActiveTab, onActiveTabChange]);
 
   const searchResults = useMemo(() => {
     if (!trimmedSearch) {
@@ -508,6 +643,27 @@ const HidUsageGrid = ({
       return haystack.includes(trimmedSearch);
     });
   }, [allUsages, trimmedSearch, layout]);
+
+  // The behavior tiles (Mouse / System) live in a separate data shape from the
+  // HID usages, so they need their own filter — otherwise a search like "reset"
+  // or "bt" finds nothing even though the tile is right there on a tab. Match the
+  // tile label, its section heading, and the tab name.
+  const behaviorSearchResults = useMemo(() => {
+    if (!trimmedSearch) return [];
+    const out: BehaviorTile[] = [];
+    for (const tile of specialTiles ?? []) {
+      if (tile.label.toLowerCase().includes(trimmedSearch)) out.push(tile);
+    }
+    for (const tab of extraTabs ?? []) {
+      for (const section of tab.sections) {
+        for (const tile of section.tiles) {
+          const haystack = `${tile.label} ${section.heading ?? ""} ${tab.name}`.toLowerCase();
+          if (haystack.includes(trimmedSearch)) out.push(tile);
+        }
+      }
+    }
+    return out;
+  }, [trimmedSearch, extraTabs, specialTiles]);
 
   const renderUsageButton = (usage: Usage) => {
     const usageValue = (usage.pageId << 16) | usage.Id;
@@ -569,35 +725,90 @@ const HidUsageGrid = ({
   const trailingClearKeycapsBasic = makeTrailingClearKeycaps("basic");
   const trailingClearKeycapsUsage = makeTrailingClearKeycaps("usage");
 
+  // A whole-binding behavior tile, styled like a keycap (same height + font as
+  // the keycode tiles) so it reads the same as picking a key. Widens for longer
+  // labels rather than shrinking the text. It's a single-select "pick the
+  // current binding" control, so it's a `radio` (consistent with the residual
+  // behavior chips), highlighted when it is the current binding. The label is
+  // fully visible, so a native `title` replaces the keycode grid's hover tooltip.
+  const renderBehaviorTile = (tile: BehaviorTile, matchFamily?: number[]) => {
+    // Highlight on an exact match, or — for a tab with a matchFamily (Layer) —
+    // when the active binding is in that family and shares this tile's param
+    // (e.g. &sl Fn / &tog Fn light up the To-Layer "Fn" tile).
+    const active =
+      !!activeBinding &&
+      (sameBinding(tile.binding, activeBinding) ||
+        (!!matchFamily &&
+          matchFamily.includes(activeBinding.behaviorId) &&
+          tile.binding.param1 === activeBinding.param1));
+    const onPress = () => onSelectBinding?.(tile.binding);
+    // While a key latch is active the grid is key-only, so whole-binding tiles
+    // are disabled — except a latch *target* family (the Layer tab, which carries
+    // matchFamily): a layer is a valid thing to latch, so it stays pickable.
+    const disabled = keyOnly && !matchFamily;
+    return (
+      <button
+        key={`${tile.binding.behaviorId}-${tile.binding.param1}-${tile.binding.param2}`}
+        type="button"
+        role="radio"
+        aria-checked={active}
+        disabled={disabled}
+        title={tile.label}
+        onClick={onPress}
+        className={`min-w-16 h-16 px-2 whitespace-nowrap rounded border text-center flex items-center justify-center leading-tight shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${active ? "bg-primary text-primary-content" : "bg-base-200 hover:bg-base-300"}`}
+      >
+        {tile.label}
+      </button>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-1">
-      <div className="h-8 flex flex-row items-center gap-2">
-        <Label className="text-sm uppercase tracking-widest font-bold text-primary shrink-0">
-          Key
-        </Label>
-        <div className="ml-auto relative w-64 max-w-full">
-          <Search className="size-4 absolute left-2 top-1/2 -translate-y-1/2 text-base-content/50 pointer-events-none" />
-          <input
-            type="search"
-            aria-label="Filter keys"
-            placeholder="Filter keys..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-2 py-1 rounded border border-base-300 bg-base-100 focus:outline-none focus:border-primary text-sm"
-          />
+      {/* In inline mode the parent hosts the "Key" label + search on its own
+          header row, so the grid renders none of its own here. */}
+      {!inline && (
+        <div className="h-8 flex flex-row items-center gap-2">
+          <Label className="text-sm uppercase tracking-widest font-bold text-primary shrink-0">
+            Key
+          </Label>
+          <div className="ml-auto relative w-64 max-w-full">
+            <Search className="size-4 absolute left-2 top-1/2 -translate-y-1/2 text-base-content/50 pointer-events-none" />
+            <input
+              type="search"
+              aria-label="Filter keys"
+              placeholder="Filter keys..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-2 py-1 rounded border border-base-300 bg-base-100 focus:outline-none focus:border-primary text-sm"
+            />
+          </div>
         </div>
-      </div>
+      )}
       {searchResults !== null ? (
         <div
           aria-label="Search results"
           className="min-h-56 max-h-56 overflow-y-auto flex flex-wrap justify-start content-start gap-1 p-1 border rounded"
         >
-          {searchResults.length === 0 ? (
+          {searchResults.length === 0 && behaviorSearchResults.length === 0 ? (
             <div className="p-2 text-base-content/60 w-full">
-              No keys match "{search}".
+              Nothing matches "{search}".
             </div>
           ) : (
-            searchResults.map(renderUsageButton)
+            <>
+              {searchResults.map(renderUsageButton)}
+              {/* Matching behavior tiles (Reset, BT_SEL, LCLK, …) so the search
+                  reaches the whole surface, not just the keycodes. Grouped as a
+                  radiogroup (own row) since the tiles are radios. */}
+              {!keyOnly && behaviorSearchResults.length > 0 && (
+                <div
+                  role="radiogroup"
+                  aria-label="Matching behaviors"
+                  className="flex flex-wrap gap-1 basis-full"
+                >
+                  {behaviorSearchResults.map((t) => renderBehaviorTile(t))}
+                </div>
+              )}
+            </>
           )}
           {/* Keep the clear tiles reachable even when the search matches
               nothing, so a key can still be cleared mid-search. */}
@@ -606,21 +817,28 @@ const HidUsageGrid = ({
       ) : (
     <Tabs
       className="flex flex-col"
-      selectedKey={activeTab ?? preferredBasicTab}
+      selectedKey={activeTab ?? BASIC_TAB_ID}
       onSelectionChange={(k) => onTabChange(k as string)}
+      disabledKeys={
+        keyOnly
+          ? (extraTabs ?? []).filter((t) => !t.matchFamily).map((t) => t.name)
+          : []
+      }
     >
       <TabList className="flex border-b">
         {allTabs.map((category) => (
           <Tab
             key={category}
             id={category}
-            className="px-4 pb-2 cursor-default outline-none rac-selected:border-b-2 rac-selected:border-primary rac-focus-visible:ring-2 rac-focus-visible:ring-primary rounded-t-md"
+            className="px-4 pb-2 cursor-default outline-none rac-selected:border-b-2 rac-selected:border-primary rac-focus-visible:ring-2 rac-focus-visible:ring-primary rac-disabled:opacity-40 rac-disabled:cursor-not-allowed rounded-t-md"
           >
             {category}
           </Tab>
         ))}
       </TabList>
-      {allTabs.map((category) => (
+      {allTabs
+        .filter((category) => !extraTabNames.includes(category))
+        .map((category) => (
         <TabPanel
           key={category}
           id={category}
@@ -629,32 +847,34 @@ const HidUsageGrid = ({
             // shift the rest of the picker. Sized to fit the 5-row
             // basic-tier shapes (ANSI / ISO / JIS all 5 rows tall).
             category === BASIC_TAB_ID ||
-            category === ISO_JIS_TAB_ID ||
-            category === "Numpad" ||
-            category === "Function + Nav"
+            category === NUMPAD_TAB ||
+            category === FUNCTION_NAV_TAB
               ? "min-h-[17rem] max-h-[17rem] overflow-auto p-1 border border-t-0 rounded-b rac-focus-visible:ring-2 rac-focus-visible:ring-primary"
               : "min-h-[17rem] max-h-[17rem] overflow-y-auto flex flex-wrap justify-start content-start gap-1 p-1 border border-t-0 rounded-b rac-focus-visible:ring-2 rac-focus-visible:ring-primary"
           }
         >
           {category === BASIC_TAB_ID ? (
-            <div className="flex flex-col gap-1 w-fit">
-              {ansiRows.map((row, i) => (
-                <div key={i} className="flex gap-1 items-end">
-                  {row.map((cell, j) => renderBasicCell(cell, j))}
-                  {i === ansiRows.length - 1 && trailingClearKeycapsBasic}
+            <div className="flex gap-2 w-fit items-stretch">
+              <div className="flex flex-col gap-1 w-fit">
+                {basicRows.map((row, i) => (
+                  <div key={i} className="flex gap-1 items-end">
+                    {row.map((cell, j) => renderBasicCell(cell, j))}
+                  </div>
+                ))}
+              </div>
+              {/* Right block: the special None / Transparent caps, pinned to the
+                  bottom row (mt-auto), aligned with the board's last row. */}
+              {clearTiles && clearTiles.tiles.length > 0 && (
+                <div className="flex flex-col gap-1 pl-2 border-l border-base-300">
+                  <div className="grid grid-cols-2 gap-1 w-fit mt-auto">
+                    {clearTiles.tiles.map((tile) =>
+                      renderClearKeycap(tile, "basic")
+                    )}
+                  </div>
                 </div>
-              ))}
+              )}
             </div>
-          ) : category === ISO_JIS_TAB_ID ? (
-            <div className="flex flex-col gap-1 w-fit">
-              {isoOrJisRows.map((row, i) => (
-                <div key={i} className="flex gap-1 items-end">
-                  {row.map((cell, j) => renderBasicCell(cell, j))}
-                  {i === isoOrJisRows.length - 1 && trailingClearKeycapsBasic}
-                </div>
-              ))}
-            </div>
-          ) : category === "Numpad" ? (
+          ) : category === NUMPAD_TAB ? (
             <div className="flex flex-col gap-1 w-fit">
               {numpadRows.map((row, i) => (
                 <div key={i} className="flex gap-1 items-end">
@@ -663,7 +883,7 @@ const HidUsageGrid = ({
                 </div>
               ))}
             </div>
-          ) : category === "Function + Nav" ? (
+          ) : category === FUNCTION_NAV_TAB ? (
             <div className="flex flex-row gap-6 w-fit">
               <div className="flex flex-col gap-1">
                 {functionRows.map((row, i) => (
@@ -697,10 +917,10 @@ const HidUsageGrid = ({
                 </div>
               )}
             </div>
-          ) : category === "Other" ? (
+          ) : category === OTHER_TAB ? (
             <ComboBox
               className="w-full p-2"
-              defaultItems={categorizedUsages[category]}
+              defaultItems={otherSections}
               selectedKey={selectedKey}
               onSelectionChange={(key) =>
                 key !== null && onValueChanged(key as number)
@@ -715,27 +935,91 @@ const HidUsageGrid = ({
               </div>
               <Popover className="w-[var(--trigger-width)] max-h-4 shadow-md text-base-content rounded border-base-content bg-base-100">
                 <ListBox className="block max-h-[30vh] min-h-[unset] overflow-auto p-2">
-                  {(item: Usage) => {
-                    const usageValue = (item.pageId << 16) | item.Id;
-                    return (
-                      <ListBoxItem
-                        id={usageValue}
-                        textValue={item.Name}
-                        className="rac-hover:bg-base-300 pl-3 relative rac-focus:bg-base-300 cursor-default select-none rac-selected:before:content-['✔'] before:absolute before:left-[0] before:top-[0]"
-                      >
-                        {item.Name}
-                      </ListBoxItem>
-                    );
-                  }}
+                  {(section: { name: string; items: Usage[] }) => (
+                    <Section id={section.name}>
+                      <Header className="px-2 pt-2 pb-1 mt-1 text-sm uppercase tracking-wide font-bold text-primary border-t border-base-300">
+                        {section.name}
+                      </Header>
+                      <Collection items={section.items}>
+                        {(item: Usage) => {
+                          const usageValue = (item.pageId << 16) | item.Id;
+                          return (
+                            <ListBoxItem
+                              id={usageValue}
+                              textValue={item.Name}
+                              className="rac-hover:bg-base-300 pl-3 relative rac-focus:bg-base-300 cursor-default select-none rac-selected:before:content-['✔'] before:absolute before:left-[0] before:top-[0]"
+                            >
+                              {item.Name}
+                            </ListBoxItem>
+                          );
+                        }}
+                      </Collection>
+                    </Section>
+                  )}
                 </ListBox>
               </Popover>
             </ComboBox>
           ) : (
             <>
               {categorizedUsages[category].map(renderUsageButton)}
-              {trailingClearKeycapsUsage}
+              {/* The rarely-used flavor behaviors (Caps Word / Key Repeat /
+                  Grave-Escape) get their own row after the media keys, and the
+                  None / Transparent clear caps share that row's trailing space
+                  so they don't wrap onto a line of their own. The flavor tiles
+                  stay in their own radiogroup (they're radios; the clear caps
+                  are toggle buttons). */}
+              {category === APPS_MEDIA_TAB ? (
+                ((specialTiles && specialTiles.length > 0) ||
+                  trailingClearKeycapsUsage) && (
+                  <div className="flex flex-wrap items-start gap-1 basis-full">
+                    {specialTiles && specialTiles.length > 0 && (
+                      <div
+                        role="radiogroup"
+                        aria-label="Behaviors"
+                        className="flex flex-wrap gap-1"
+                      >
+                        {specialTiles.map((t) => renderBehaviorTile(t))}
+                      </div>
+                    )}
+                    {trailingClearKeycapsUsage}
+                  </div>
+                )
+              ) : (
+                trailingClearKeycapsUsage
+              )}
             </>
           )}
+        </TabPanel>
+      ))}
+      {/* Whole-binding behavior tabs (Mouse / System): keycap-styled tiles, one
+          labelled section per source behavior, each tile a finished binding. */}
+      {extraTabs?.map((tab) => (
+        <TabPanel
+          key={tab.name}
+          id={tab.name}
+          className="min-h-[17rem] max-h-[17rem] overflow-y-auto flex flex-col gap-3 p-1 border border-t-0 rounded-b rac-focus-visible:ring-2 rac-focus-visible:ring-primary"
+        >
+          {tab.sections.map((section, i) => (
+            <div
+              key={section.heading ?? `section-${i}`}
+              className="flex flex-col gap-1"
+            >
+              {section.heading && (
+                <span className="text-sm uppercase tracking-wide font-semibold text-base-content/70">
+                  {section.heading}
+                </span>
+              )}
+              <div
+                role="radiogroup"
+                aria-label={section.heading ?? tab.name}
+                className="flex flex-wrap gap-1"
+              >
+                {section.tiles.map((t) =>
+                  renderBehaviorTile(t, tab.matchFamily)
+                )}
+              </div>
+            </div>
+          ))}
         </TabPanel>
       ))}
     </Tabs>
@@ -751,12 +1035,48 @@ export const HidUsagePicker = ({
   onValueChanged,
   disabled,
   clearTiles,
+  extraTabs,
+  specialTiles,
+  activeBinding,
+  onSelectBinding,
+  keyOnly,
+  inline,
+  search,
+  onSearchChange,
+  modifiers,
 }: HidUsagePickerProps) => {
+  const modSide = modifiers?.side ?? "left";
+  const modLabel = modifiers?.label ?? "+ Modifier";
+
+  // Track the grid's active tab so the implicit-modifier picker can be shown
+  // only where it makes sense (keycode tabs) and hidden on the behavior tabs.
+  const [activeTabName, setActiveTabName] = useState<string>(BASIC_TAB_ID);
+  const behaviorTabNames = useMemo(
+    () => (extraTabs ?? []).map((t) => t.name),
+    [extraTabs]
+  );
+  const onBehaviorTab = behaviorTabNames.includes(activeTabName);
+  // In inline mode the modifier row shows only on the tabs where you actually
+  // compose a modified keycode — Basic and Function + Nav — and never while a
+  // search is filtering the grid.
+  const showModRow =
+    !onBehaviorTab &&
+    (activeTabName === BASIC_TAB_ID || activeTabName === FUNCTION_NAV_TAB) &&
+    !(search && search.trim().length > 0);
+
   const mods = useMemo(() => {
     const flags = value ? value >> 24 : 0;
 
     return all_mods.filter((m) => m & flags).map((m) => m.toLocaleString());
   }, [value]);
+
+  const toggleMod = (m: Mods) => {
+    const next = new Set(mods);
+    const key = m.toLocaleString();
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    modifiersChanged([...next]);
+  };
 
   const selectionChanged = useCallback(
     (e: number | undefined) => {
@@ -781,8 +1101,107 @@ export const HidUsagePicker = ({
       const new_value = mask_mods(value) | (mod_flags << 24);
       onValueChanged(new_value);
     },
-    [value],
+    [value, onValueChanged],
   );
+
+  // Side column (default, non-inline uses such as the Sticky Key / Key Toggle
+  // key picker): the implicit modifiers as a vertical checkbox stack.
+  const modifierColumn = (
+    <div className="flex flex-col gap-1 shrink-0">
+      <div className="h-8 flex items-center">
+        <Label
+          id="hid-usage-picker"
+          className="text-sm uppercase tracking-widest font-bold text-primary"
+        >
+          {modLabel}
+        </Label>
+      </div>
+      <CheckboxGroup
+        aria-label={label ? `Implicit modifiers for ${label}` : "Implicit modifiers"}
+        className="flex flex-col gap-px rounded-md"
+        value={mods}
+        onChange={modifiersChanged}
+      >
+        {all_mods.map((m) => (
+          <Checkbox
+            key={m}
+            value={m.toLocaleString()}
+            className="text-nowrap cursor-pointer flex px-3 py-1 items-center rac-selected:bg-primary border-base-100 bg-base-300 hover:bg-base-100 first:rounded-t-md last:rounded-b-md rac-selected:text-primary-content"
+          >
+            {mod_labels[m]}
+          </Checkbox>
+        ))}
+      </CheckboxGroup>
+      {modifiers?.hint && (
+        <p className="text-xs text-base-content/60 w-32">{modifiers.hint}</p>
+      )}
+    </div>
+  );
+
+  // Inline row (the Normal-slot surface): a compact "Send with" row of modifier
+  // toggles below the full-width grid, so it never steals tab/grid width.
+  const modifierRow = (
+    <div className="flex items-center flex-wrap gap-1" role="group" aria-label="Send with modifiers">
+      <span className="text-sm uppercase tracking-widest font-bold text-primary mr-1">
+        {modLabel}
+      </span>
+      {all_mods.map((m) => {
+        const active = mods.includes(m.toLocaleString());
+        return (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={active}
+            onClick={() => toggleMod(m)}
+            className={`px-3 py-1 rounded border text-sm ${
+              active
+                ? "bg-primary text-primary-content border-primary"
+                : "bg-base-200 hover:bg-base-300 border-base-300"
+            }`}
+          >
+            {mod_labels[m]}
+          </button>
+        );
+      })}
+      {modifiers?.hint && (
+        <span className="text-xs text-base-content/50 ml-1">{modifiers.hint}</span>
+      )}
+    </div>
+  );
+
+  const grid = (
+    <div className="flex-1 min-w-0">
+      <HidUsageGrid
+        value={value}
+        onValueChanged={selectionChanged}
+        usagePages={usagePages}
+        clearTiles={clearTiles}
+        extraTabs={extraTabs}
+        specialTiles={specialTiles}
+        activeBinding={activeBinding}
+        onSelectBinding={onSelectBinding}
+        keyOnly={keyOnly}
+        onActiveTabChange={setActiveTabName}
+        inline={inline}
+        search={search}
+        onSearchChange={onSearchChange}
+      />
+    </div>
+  );
+
+  if (inline) {
+    return (
+      <div
+        className={`flex flex-col gap-2 relative ${
+          disabled ? "opacity-40 pointer-events-none select-none" : ""
+        }`}
+        aria-disabled={disabled || undefined}
+      >
+        {grid}
+        {showModRow && modifierRow}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -791,40 +1210,19 @@ export const HidUsagePicker = ({
       }`}
       aria-disabled={disabled || undefined}
     >
-      <div className="flex flex-col gap-1 shrink-0">
-        <div className="h-8 flex items-center">
-          <Label
-            id="hid-usage-picker"
-            className="text-sm uppercase tracking-widest font-bold text-primary"
-          >
-            + Modifier
-          </Label>
-        </div>
-        <CheckboxGroup
-          aria-label={label ? `Implicit modifiers for ${label}` : "Implicit modifiers"}
-          className="flex flex-col gap-px rounded-md"
-          value={mods}
-          onChange={modifiersChanged}
-        >
-          {all_mods.map((m) => (
-            <Checkbox
-              key={m}
-              value={m.toLocaleString()}
-              className="text-nowrap cursor-pointer flex px-3 py-1 items-center rac-selected:bg-primary border-base-100 bg-base-300 hover:bg-base-100 first:rounded-t-md last:rounded-b-md rac-selected:text-primary-content"
-            >
-              {mod_labels[m]}
-            </Checkbox>
-          ))}
-        </CheckboxGroup>
-      </div>
-      <div className="flex-1 min-w-0">
-        <HidUsageGrid
-          value={value}
-          onValueChanged={selectionChanged}
-          usagePages={usagePages}
-          clearTiles={clearTiles}
-        />
-      </div>
+      {/* The implicit-modifier column is irrelevant on the whole-binding tabs
+          (Mouse / System) — a Reset can't "send with Ctrl" — so hide it there. */}
+      {modSide === "right" ? (
+        <>
+          {grid}
+          {!onBehaviorTab && modifierColumn}
+        </>
+      ) : (
+        <>
+          {!onBehaviorTab && modifierColumn}
+          {grid}
+        </>
+      )}
     </div>
   );
 };
