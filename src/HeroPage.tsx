@@ -3,6 +3,7 @@ import { Maximize2, X } from "lucide-react";
 
 import { ExternalLink } from "./misc/ExternalLink";
 import { useModalRef } from "./misc/useModalRef";
+import { publicUrl } from "./publicUrl";
 
 export interface HeroPageProps {
   onConnect: () => void;
@@ -129,7 +130,7 @@ export const HeroPage = ({
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-12 items-center">
           <div className="flex flex-col gap-6">
             <div className="flex items-center gap-4">
-              <img src="/zmk.svg" alt="ZMK logo" className="h-12" />
+              <img src={publicUrl("zmk.svg")} alt="ZMK logo" className="h-12" />
               <h1 className="text-4xl font-semibold tracking-tight">
                 zmk-studio-tweaks
               </h1>
@@ -172,7 +173,7 @@ export const HeroPage = ({
                   Chromium-based browser (Chrome, Edge, Brave, …) on a desktop
                   OS, or grab the{" "}
                   <a
-                    href="/download"
+                    href={publicUrl("download.html")}
                     className="text-primary hover:underline"
                   >
                     desktop build
@@ -199,7 +200,7 @@ export const HeroPage = ({
           <div className="flex flex-col gap-3 items-center">
             <div className="rounded-lg border border-base-300 bg-base-200 overflow-hidden shadow-lg">
               <img
-                src="/screenshots/fullscreen.png"
+                src={publicUrl("screenshots/fullscreen.png")}
                 alt="Screenshot of zmk-studio-tweaks editing a Cornix keymap, with the layer list, the physical keyboard view, and the visual key picker all on one screen"
                 className="max-h-[480px] w-auto h-auto block"
               />
@@ -274,7 +275,7 @@ const FeatureRow = ({ feature, flip, onImageClick }: FeatureRowProps) => {
     <>
       <div className="relative w-full bg-base-200 overflow-hidden">
         <img
-          src={image.src}
+          src={publicUrl(image.src)}
           alt={image.alt}
           loading="lazy"
           className={imgClass}
@@ -406,7 +407,7 @@ const ImageLightbox = ({ image, onClose }: ImageLightboxProps) => {
             </button>
           </div>
           <img
-            src={shown.src}
+            src={publicUrl(shown.src)}
             alt={shown.alt}
             className="block max-w-[90vw] max-h-[78vh] w-auto h-auto object-contain rounded-md"
           />

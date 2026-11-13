@@ -9,6 +9,7 @@ import {
 } from "@fortawesome/free-brands-svg-icons";
 import { DownloadIcon } from "lucide-react";
 import releaseData from "./data/release-data.json";
+import { publicUrl } from "./publicUrl";
 
 type Platform = "windows" | "mac" | "linux" | "ios" | "android" | "unknown";
 
@@ -115,7 +116,11 @@ export const Download = () => {
 
   return (
     <div className="bg-base-200 dark:bg-base-300 text-base-content min-h-full w-full flex flex-col justify-center items-center p-10 pb-48">
-      <img src="/zmk-mac-app-icon.webp" alt="ZMK Studio" className="w-64" />
+      <img
+        src={publicUrl("zmk-mac-app-icon.webp")}
+        alt="ZMK Studio"
+        className="w-64"
+      />
       <div className="text-3xl mb-1">ZMK Studio</div>
       <div className="text-md mb-1 opacity-70">
         {ReleaseVersion}

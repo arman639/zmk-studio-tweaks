@@ -8,6 +8,7 @@ import { Key, ListBox, ListBoxItem, Selection } from "react-aria-components";
 import { useModalRef } from "./misc/useModalRef";
 import { ExternalLink } from "./misc/ExternalLink";
 import { GenericModal } from "./GenericModal";
+import { publicUrl } from "./publicUrl";
 
 export type TransportFactory = {
   label: string;
@@ -262,7 +263,7 @@ function noTransportsOptionsPrompt() {
           </li>
           <li>
             Download our{" "}
-            <ExternalLink href="/download">
+            <ExternalLink href={publicUrl("download.html")}>
               cross platform application
             </ExternalLink>
             .

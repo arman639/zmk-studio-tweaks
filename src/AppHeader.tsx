@@ -16,6 +16,7 @@ import { ChevronDown, Undo2, Redo2, Save, Trash2 } from "lucide-react";
 import { Tooltip } from "./misc/Tooltip";
 import { GenericModal } from "./GenericModal";
 import { HostLayoutPicker } from "./layouts/HostLayoutPicker";
+import { publicUrl } from "./publicUrl";
 
 export interface AppHeaderProps {
   connectedDeviceLabel?: string;
@@ -72,7 +73,7 @@ export const AppHeader = ({
   return (
     <header className="top-0 left-0 right-0 grid grid-cols-[1fr_auto_1fr] items-center justify-between h-10 max-w-full">
       <div className="flex px-3 items-center gap-1">
-        <img src="/zmk.svg" alt="ZMK Logo" className="h-8 rounded" />
+        <img src={publicUrl("zmk.svg")} alt="ZMK Logo" className="h-8 rounded" />
         <p>Studio</p>
       </div>
       <GenericModal ref={showSettingsRef} className="max-w-[50vw]">
